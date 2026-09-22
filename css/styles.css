@@ -1,0 +1,784 @@
+/* =============================================
+   Aplicación de Tráfico Simulado - Estilos
+   ============================================= */
+
+/* --- Reset y Base --- */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', sans-serif;
+    overflow: hidden; /* Evitar scrollbars en el cuerpo principal */
+}
+
+/* --- Bloqueo de acceso (requiere sesión para ver el mapa) --- */
+#auth-gate {
+    position: fixed;
+    inset: 0;
+    background: #f3f4f6;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#auth-gate.hidden {
+    display: none;
+}
+
+.auth-gate-box {
+    width: 90%;
+    max-width: 360px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    padding: 28px 24px;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+.auth-gate-box h2 {
+    margin: 0 0 4px 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gate-error {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #dc2626;
+    text-align: center;
+}
+
+/* --- Contenedor del Mapa --- */
+#map-container {
+    height: 100vh;
+    height: 100dvh; /* evita el salto por la barra de direcciones en móviles (iOS/Android) */
+    width: 100vw;
+    position: relative;
+}
+
+#map {
+    height: 100%;
+    width: 100%;
+    z-index: 1; /* El mapa está al fondo */
+}
+
+/* --- Barra de Búsqueda Flotante --- */
+.search-bar {
+    position: absolute;
+    top: calc(20px + env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000; /* Sobre el mapa */
+    width: 90%;
+    max-width: 400px;
+    background: white;
+    border-radius: 24px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    display: flex;
+    align-items: center;
+    padding: 5px 15px;
+}
+
+.search-bar input {
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    background: transparent;
+}
+
+/* --- Botones de Acción Flotantes (ubicación, capas) --- */
+.action-buttons {
+    position: absolute;
+    right: calc(20px + env(safe-area-inset-right, 0px));
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* En pantallas bajas (celulares en horizontal) la columna de botones no cabe
+       entera: en vez de salirse por arriba, se vuelve scrolleable. Verificado con
+       mediciones reales: a 667x375 y 568x320 la columna se salía ~9-64px por arriba. */
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 2px;
+    scrollbar-width: none;
+}
+
+.action-buttons::-webkit-scrollbar {
+    display: none;
+}
+
+.round-btn {
+    background-color: white;
+    border: none;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    color: #4b5563; /* Gris oscuro */
+    font-size: 20px;
+}
+
+.round-btn:hover {
+    background-color: #f3f4f6;
+}
+
+.round-btn:active {
+    transform: scale(0.95);
+}
+
+/* --- Panel Inferior para Detalles de Ubicación --- */
+#bottom-panel {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: white;
+    z-index: 1000;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+    transform: translateY(100%); /* Oculto por defecto */
+    transition: transform 0.3s ease-in-out;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)) 20px;
+    box-sizing: border-box;
+}
+
+#bottom-panel.active {
+    transform: translateY(0);
+}
+
+.panel-handle {
+    width: 40px;
+    height: 5px;
+    background: #d1d5db;
+    border-radius: 3px;
+    margin: 0 auto 15px auto;
+}
+
+/* --- Leyenda de Tráfico (Estilo Google Maps) ---
+   Centrada en el espacio libre entre el control de zoom (abajo-izquierda) y la
+   columna de botones (abajo-derecha), no en el ancho total de la pantalla: con
+   left/right simétricos + margin:auto se acopla sola a cualquier tamaño de
+   pantalla sin necesitar romper el centrado en JS. */
+#traffic-legend {
+    position: absolute;
+    bottom: 30px;
+    left: 70px;
+    right: 80px;
+    width: fit-content;
+    margin: 0 auto;
+    background: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    z-index: 1000;
+    display: none; /* Oculto por defecto */
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 13px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    color: #333;
+}
+
+.legend-colors {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    width: 80px;
+}
+
+.legend-colors div {
+    flex: 1;
+}
+
+/* --- Panel de Capas --- */
+#layers-panel {
+    position: absolute;
+    right: -320px; /* Oculto fuera de pantalla */
+    top: 0;
+    width: 300px;
+    height: 100%;
+    background: white;
+    z-index: 1100;
+    box-shadow: -4px 0 15px rgba(0,0,0,0.15);
+    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 20px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+#layers-panel.active {
+    right: 0;
+}
+
+.layers-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.layers-panel-header h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+}
+
+.layers-close-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #6b7280;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.layers-close-btn:hover {
+    background-color: #f3f4f6;
+    color: #1f2937;
+}
+
+/* --- Grid de Mapas Base --- */
+.base-layers-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.base-layer-option {
+    cursor: pointer;
+    text-align: center;
+    border-radius: 12px;
+    padding: 6px;
+    border: 2px solid transparent;
+    transition: border-color 0.2s, transform 0.15s;
+}
+
+.base-layer-option:hover {
+    transform: scale(1.03);
+}
+
+.base-layer-option.active {
+    border-color: #3b82f6;
+}
+
+.base-layer-option.active span {
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+.layer-thumbnail {
+    width: 100%;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+}
+
+.layer-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.base-layer-option span {
+    font-size: 12px;
+    font-weight: 500;
+    color: #4b5563;
+}
+
+/* --- Separador --- */
+.layers-divider {
+    height: 1px;
+    background: #e5e7eb;
+    margin: 8px 0 16px 0;
+}
+
+/* --- Título de Sección --- */
+.layers-section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0 0 12px 0;
+}
+
+/* --- Opción de Overlay (Tráfico) --- */
+.overlay-option {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 4px;
+    border-radius: 8px;
+    transition: background-color 0.15s;
+}
+
+.overlay-option:hover {
+    background-color: #f9fafb;
+}
+
+.overlay-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.overlay-info i {
+    font-size: 18px;
+}
+
+/* --- Toggle Switch --- */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #d1d5db;
+    border-radius: 24px;
+    transition: background-color 0.3s;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #3b82f6;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+}
+
+/* --- Backdrop del Panel de Capas --- */
+#layers-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.3);
+    z-index: 1050;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+#layers-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* --- Botón "Registrar punto" activo (modo colocación) --- */
+.round-btn.active-mode {
+    background-color: #2563eb;
+}
+
+.round-btn.active-mode i {
+    color: white !important;
+}
+
+/* --- Modal: Registrar Punto de Control --- */
+.control-point-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 1150;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.control-point-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.control-point-modal {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    width: 90%;
+    max-width: 360px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    box-sizing: border-box;
+    z-index: 1200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    font-family: 'Inter', sans-serif;
+}
+
+.control-point-modal.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.control-point-modal h3 {
+    margin: 0 0 4px 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.control-point-modal-subtitle {
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.cp-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+    margin-top: 12px;
+}
+
+.cp-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    box-sizing: border-box;
+    resize: none;
+    outline: none;
+}
+
+.cp-input:focus {
+    border-color: #3b82f6;
+}
+
+.cp-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.cp-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.cp-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.cp-btn-primary {
+    background: #2563eb;
+    color: white;
+}
+
+.cp-btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+/* --- Marcadores de puntos de control --- */
+.control-point-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    border: 2px solid white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.control-point-icon i {
+    transform: rotate(45deg);
+    color: white;
+    font-size: 14px;
+}
+
+/* --- Botón de sesión (estado autenticado) --- */
+.round-btn.logged-in i {
+    color: #16a34a !important;
+}
+
+/* --- Enlace para alternar login/registro --- */
+.auth-toggle-text {
+    text-align: center;
+    font-size: 13px;
+    color: #6b7280;
+    margin: 16px 0 0 0;
+}
+
+.auth-toggle-text a {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+    margin-left: 4px;
+}
+
+/* --- Acciones dentro del popup de un punto de control --- */
+.cp-popup-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.cp-popup-btn {
+    flex: 1;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    background: white;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+}
+
+.cp-popup-btn:hover {
+    background: #f3f4f6;
+}
+
+.cp-popup-btn-resolve {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.cp-popup-btn-resolve:hover {
+    background: #fecaca;
+}
+
+/* --- Marcador de ubicación en vivo del agente --- */
+.agent-location-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #4338ca;
+    border: 3px solid white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    animation: agent-pulse 2s infinite;
+}
+
+.agent-location-icon i {
+    color: white;
+    font-size: 15px;
+}
+
+@keyframes agent-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(67, 56, 202, 0.6);
+    }
+    70% {
+        box-shadow: 0 0 0 14px rgba(67, 56, 202, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(67, 56, 202, 0);
+    }
+}
+
+/* --- Panel de Administración de Usuarios --- */
+.admin-modal {
+    max-width: 400px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.user-list {
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.user-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+.user-row-email {
+    font-size: 13px;
+    color: #374151;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.user-row-role-select {
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    font-family: 'Inter', sans-serif;
+}
+
+/* --- Selector de rutas alternativas --- */
+.route-option-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.route-option-row:hover {
+    background-color: #f9fafb;
+}
+
+.route-option-main strong {
+    font-size: 15px;
+    color: #1f2937;
+}
+
+.route-option-sub {
+    font-size: 12px;
+    color: #6b7280;
+    margin-left: 6px;
+}
+
+.route-option-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #16a34a;
+    background: #dcfce7;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+/* --- Ajustes para celulares angostos (verificado con medición real a 320px:
+   la leyenda de tráfico centrada chocaba con la columna de botones) --- */
+@media (max-width: 480px) {
+    #traffic-legend {
+        left: 60px;
+        right: 66px;
+        font-size: 11px;
+        padding: 6px 10px;
+        gap: 6px;
+    }
+
+    .legend-colors {
+        width: 50px;
+    }
+
+    .action-buttons {
+        right: 12px;
+        bottom: 20px;
+    }
+
+    .round-btn {
+        width: 46px;
+        height: 46px;
+        font-size: 18px;
+    }
+}
+
+/* --- Marcadores de ruta (punto A / punto B) --- */
+.route-point-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+}
+
+/* --- Resumen de ruta en el panel inferior: "hidden" debe ganarle siempre a "flex" --- */
+#route-summary.hidden,
+#place-actions.hidden,
+#route-actions.hidden,
+#navigation-actions.hidden {
+    display: none;
+}
+
+#route-summary:not(.hidden) {
+    display: flex;
+}
+
