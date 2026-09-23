@@ -231,6 +231,9 @@ function toggleGateAuthMode(event) {
     event.preventDefault();
     isGateSignupMode = !isGateSignupMode;
 
+    document.getElementById('gate-name-group').classList.toggle('hidden', !isGateSignupMode);
+    document.getElementById('gate-name').required = isGateSignupMode;
+
     document.getElementById('gate-submit-btn').innerText = isGateSignupMode ? 'Registrarme' : 'Iniciar sesión';
     document.getElementById('gate-toggle-text').innerText = isGateSignupMode ? '¿Ya tienes cuenta?' : '¿No tienes cuenta?';
     document.getElementById('gate-toggle-link').innerText = isGateSignupMode ? 'Inicia sesión' : 'Regístrate';
@@ -251,12 +254,13 @@ async function submitGateAuthForm(event) {
 
     const email = document.getElementById('gate-email').value.trim();
     const password = document.getElementById('gate-password').value;
+    const name = document.getElementById('gate-name').value.trim();
     const btn = document.getElementById('gate-submit-btn');
     btn.disabled = true;
     btn.innerText = isGateSignupMode ? 'Creando...' : 'Entrando...';
 
     const { error } = isGateSignupMode
-        ? await supabaseClient.auth.signUp({ email, password })
+        ? await supabaseClient.auth.signUp({ email, password, options: { data: { full_name: name } } })
         : await supabaseClient.auth.signInWithPassword({ email, password });
 
     btn.disabled = false;
@@ -339,6 +343,7 @@ function closeAdminPanel() {
 async function submitCreateUser(event) {
     event.preventDefault();
 
+    const name = document.getElementById('new-user-name').value.trim();
     const email = document.getElementById('new-user-email').value.trim();
     const password = document.getElementById('new-user-password').value;
     const role = document.getElementById('new-user-role').value;
@@ -351,7 +356,7 @@ async function submitCreateUser(event) {
         auth: { persistSession: false, autoRefreshToken: false }
     });
 
-    const { data, error } = await tempClient.auth.signUp({ email, password });
+    const { data, error } = await tempClient.auth.signUp({ email, password, options: { data: { full_name: name } } });
 
     if (error) {
         showToast(error.message, 'error');
@@ -396,7 +401,9 @@ async function loadUserList() {
 
     listEl.innerHTML = data.map(user => `
         <div class="user-row">
-            <span class="user-row-email" title="${user.email || user.id}">${user.email || user.id}</span>
+            <span class="user-row-email" title="${user.full_name || user.email || user.id}">
+                ${user.full_name ? `<b>${user.full_name}</b><br><small>${user.email}</small>` : (user.email || user.id)}
+            </span>
             <select class="user-row-role-select" onchange="updateUserRole('${user.id}', this.value)">
                 <option value="ciudadano" ${user.role === 'ciudadano' ? 'selected' : ''}>Ciudadano</option>
                 <option value="agente" ${user.role === 'agente' ? 'selected' : ''}>Agente</option>
@@ -440,6 +447,9 @@ function toggleAuthMode(event) {
     event.preventDefault();
     isSignupMode = !isSignupMode;
 
+    document.getElementById('auth-name-group').classList.toggle('hidden', !isSignupMode);
+    document.getElementById('auth-name').required = isSignupMode;
+
     document.getElementById('auth-modal-title').innerText = isSignupMode ? 'Crear cuenta' : 'Iniciar sesión';
     document.getElementById('auth-submit-btn').innerText = isSignupMode ? 'Registrarme' : 'Iniciar sesión';
     document.getElementById('auth-toggle-text').innerText = isSignupMode ? '¿Ya tienes cuenta?' : '¿No tienes cuenta?';
@@ -449,13 +459,14 @@ function toggleAuthMode(event) {
 async function submitAuthForm(event) {
     event.preventDefault();
 
+    const name = document.getElementById('auth-name').value.trim();
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value;
     const submitBtn = document.getElementById('auth-submit-btn');
     submitBtn.disabled = true;
 
     const { error } = isSignupMode
-        ? await supabaseClient.auth.signUp({ email, password })
+        ? await supabaseClient.auth.signUp({ email, password, options: { data: { full_name: name } } })
         : await supabaseClient.auth.signInWithPassword({ email, password });
 
     submitBtn.disabled = false;
@@ -769,9 +780,20 @@ function renderAgentLocationMarker(row) {
         iconAnchor: [17, 17]
     });
 
-    agentLocationMarkers[row.user_id] = L.marker(latlng, { icon, zIndexOffset: 900 })
+    const marker = L.marker(latlng, { icon, zIndexOffset: 900 })
         .addTo(map)
-        .bindPopup('Agente de tráfico en vivo');
+        .bindPopup('Agente de tráfico en vivo (Cargando...)');
+        
+    agentLocationMarkers[row.user_id] = marker;
+
+    // Buscar y actualizar el popup con el nombre (o correo)
+    supabaseClient.rpc('get_user_name', { uid: row.user_id }).then(({ data, error }) => {
+        if (!error && data) {
+            marker.bindPopup(`Agente: <b>${escapeHtml(data)}</b>`);
+        } else {
+            marker.bindPopup('Agente de tráfico en vivo');
+        }
+    });
 }
 
 function removeAgentLocationMarker(userId) {

@@ -42,6 +42,10 @@
             <p class="control-point-modal-subtitle">Inicia sesión para ver el mapa.</p>
 
             <form id="gate-auth-form" onsubmit="submitGateAuthForm(event)">
+                <div id="gate-name-group" class="hidden">
+                    <label class="cp-label">Nombre</label>
+                    <input type="text" id="gate-name" class="cp-input">
+                </div>
                 <label class="cp-label">Correo</label>
                 <input type="email" id="gate-email" class="cp-input" required>
 
@@ -284,6 +288,10 @@
                 puntos de control.</p>
 
             <form id="auth-form" onsubmit="submitAuthForm(event)">
+                <div id="auth-name-group" class="hidden">
+                    <label class="cp-label">Nombre</label>
+                    <input type="text" id="auth-name" class="cp-input">
+                </div>
                 <label class="cp-label">Correo</label>
                 <input type="email" id="auth-email" class="cp-input" required>
 
@@ -309,6 +317,9 @@
             <p class="control-point-modal-subtitle">Crea usuarios y asigna su rol.</p>
 
             <form id="create-user-form" onsubmit="submitCreateUser(event)">
+                <label class="cp-label">Nombre</label>
+                <input type="text" id="new-user-name" class="cp-input" required>
+
                 <label class="cp-label">Correo</label>
                 <input type="email" id="new-user-email" class="cp-input" required>
 
