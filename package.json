@@ -1,0 +1,26 @@
+{
+  "name": "proyecto-de-trafico",
+  "version": "1.0.0",
+  "description": "",
+  "main": "sw.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sansalvasur/Gestor-de-trafico.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Sansalvasur/Gestor-de-trafico/issues"
+  },
+  "homepage": "https://github.com/Sansalvasur/Gestor-de-trafico#readme",
+  "devDependencies": {
+    "vite": "^8.3.0"
+  }
+}

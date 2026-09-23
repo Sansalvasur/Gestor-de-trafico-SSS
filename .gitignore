@@ -1,6 +1,9 @@
 # Dependencias de Node
 node_modules/
 
+# Build de producción (Vite)
+dist/
+
 # Archivos del sistema
 .DS_Store
 Thumbs.db
