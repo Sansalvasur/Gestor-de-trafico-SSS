@@ -11,8 +11,10 @@ const CACHE_NAME = 'trafico-app-shell-v1';
 const APP_SHELL = [
     './',
     './index.html',
+    './mapa/index.html',
     './css/styles.css',
     './js/app.js',
+    './js/auth.js',
     './js/config.js',
     './manifest.json',
     './data/san-salvador-sur.geojson',

@@ -3,61 +3,274 @@
    ============================================= */
 
 /* --- Reset y Base --- */
-html, body {
+html,
+body {
     height: 100%;
     margin: 0;
     padding: 0;
     font-family: 'Inter', sans-serif;
-    overflow: hidden; /* Evitar scrollbars en el cuerpo principal */
+    overflow: hidden;
+    /* Evitar scrollbars en el cuerpo principal */
 }
 
 /* --- Bloqueo de acceso (requiere sesión para ver el mapa) --- */
 #auth-gate {
     position: fixed;
     inset: 0;
-    background: #f3f4f6;
     z-index: 5000;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    padding: 20px;
+    /* Imagen de fondo del territorio */
+    background-color: #ffffff;
+    background-image: url('../icons/fondo.jpg');
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+}
+
+/* Overlay azul oscuro sobre la imagen */
+#auth-gate::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 20, 60, 0.62);
+    z-index: 0;
+    pointer-events: none;
 }
 
 #auth-gate.hidden {
     display: none;
 }
 
+/* Card glassmorphism oscuro */
 .auth-gate-box {
+    position: relative;
+    z-index: 1;
     width: 90%;
-    max-width: 360px;
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-    padding: 28px 24px;
+    max-width: 420px;
+    background: rgba(8, 16, 48, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(100, 160, 255, 0.08);
+    padding: 36px 32px 30px;
     box-sizing: border-box;
     font-family: 'Inter', sans-serif;
+    animation: gateCardIn 0.55s cubic-bezier(.22, 1, .36, 1) both;
 }
 
+@keyframes gateCardIn {
+    from {
+        opacity: 0;
+        transform: translateY(28px) scale(0.97);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Logo institucional */
+.auth-gate-logo {
+    display: block;
+    width: 86px;
+    height: 86px;
+    object-fit: contain;
+    margin: 0 auto 10px;
+    filter: drop-shadow(0 4px 16px rgba(80, 140, 255, 0.35));
+}
+
+/* Etiqueta institución */
+.auth-gate-brand {
+    display: block;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #5ab4ff;
+    margin-bottom: 6px;
+}
+
+/* Título principal */
 .auth-gate-box h2 {
     margin: 0 0 4px 0;
-    font-size: 20px;
-    font-weight: 700;
-    color: #1f2937;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    font-size: 34px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 2px;
+    text-align: center;
+    justify-content: center;
+    text-shadow: 0 2px 12px rgba(80, 140, 255, 0.3);
+    gap: 0;
 }
 
+/* Subtítulo */
+.auth-gate-subtitle {
+    display: block;
+    text-align: center;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.65);
+    font-style: italic;
+    margin-bottom: 22px;
+}
+
+/* Labels */
+.auth-gate-box .cp-label {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    color: rgba(255, 255, 255, 0.6) !important;
+    margin-bottom: 6px !important;
+    margin-top: 16px !important;
+    display: block !important;
+}
+
+/* Wrapper de input con ícono */
+.auth-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.auth-input-wrap .auth-icon {
+    position: absolute;
+    left: 14px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 14px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.auth-input-wrap .auth-eye {
+    position: absolute;
+    right: 14px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 2;
+    background: none;
+    border: none;
+    padding: 0;
+    transition: color 0.2s;
+}
+
+.auth-input-wrap .auth-eye:hover {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Inputs del login */
+.auth-gate-box .cp-input {
+    width: 100% !important;
+    background: rgba(255, 255, 255, 0.07) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+    border-radius: 10px !important;
+    padding: 13px 14px 13px 44px !important;
+    font-size: 14px !important;
+    font-family: 'Inter', sans-serif !important;
+    transition: border-color 0.25s, background 0.25s, box-shadow 0.25s !important;
+    outline: none !important;
+    box-sizing: border-box !important;
+}
+
+.auth-gate-box .cp-input.has-eye {
+    padding-right: 44px !important;
+}
+
+.auth-gate-box .cp-input::placeholder {
+    color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.auth-gate-box .cp-input:focus {
+    border-color: #4a90ff !important;
+    background: rgba(74, 144, 255, 0.1) !important;
+    box-shadow: 0 0 0 3px rgba(74, 144, 255, 0.18) !important;
+}
+
+/* Botón de ingreso */
+.auth-gate-box .cp-btn-primary[type="submit"] {
+    width: 100% !important;
+    padding: 15px !important;
+    margin-top: 24px !important;
+    border: none !important;
+    border-radius: 10px !important;
+    background: linear-gradient(90deg, #3a7fe8 0%, #5b6ef5 100%) !important;
+    color: #ffffff !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+    cursor: pointer !important;
+    transition: all 0.25s ease !important;
+    box-shadow: 0 6px 24px rgba(74, 144, 255, 0.45) !important;
+    font-family: 'Inter', sans-serif !important;
+}
+
+.auth-gate-box .cp-btn-primary[type="submit"]:hover {
+    background: linear-gradient(90deg, #4a8ff8 0%, #6b7ef8 100%) !important;
+    box-shadow: 0 8px 30px rgba(74, 144, 255, 0.6) !important;
+    transform: translateY(-1px) !important;
+}
+
+.auth-gate-box .cp-btn-primary[type="submit"]:active {
+    transform: scale(0.98) !important;
+}
+
+/* Toggle registro/login */
+.auth-toggle-text {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 16px;
+}
+
+.auth-toggle-text a {
+    color: #5ab4ff;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.auth-toggle-text a:hover {
+    text-decoration: underline;
+}
+
+/* Error */
 .gate-error {
     margin-top: 12px;
     font-size: 13px;
-    color: #dc2626;
+    color: #fca5a5;
     text-align: center;
+    background: rgba(220, 38, 38, 0.18);
+    border: 1px solid rgba(220, 38, 38, 0.35);
+    border-radius: 8px;
+    padding: 10px 14px;
 }
+
+/* Nota debajo del card */
+.auth-gate-note {
+    position: relative;
+    z-index: 1;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    line-height: 1.6;
+    margin-top: 18px;
+    max-width: 420px;
+}
+
 
 /* --- Contenedor del Mapa --- */
 #map-container {
     height: 100vh;
-    height: 100dvh; /* evita el salto por la barra de direcciones en móviles (iOS/Android) */
+    height: 100dvh;
+    /* evita el salto por la barra de direcciones en móviles (iOS/Android) */
     width: 100vw;
     position: relative;
 }
@@ -65,7 +278,8 @@ html, body {
 #map {
     height: 100%;
     width: 100%;
-    z-index: 1; /* El mapa está al fondo */
+    z-index: 1;
+    /* El mapa está al fondo */
 }
 
 /* --- Barra de Búsqueda Flotante --- */
@@ -74,7 +288,8 @@ html, body {
     top: calc(20px + env(safe-area-inset-top, 0px));
     left: 50%;
     transform: translateX(-50%);
-    z-index: 1000; /* Sobre el mapa */
+    z-index: 1000;
+    /* Sobre el mapa */
     width: 90%;
     max-width: 400px;
     background: white;
@@ -127,10 +342,11 @@ html, body {
     display: flex;
     justify-content: center;
     align-items: center;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     transition: background-color 0.2s, transform 0.1s;
-    color: #4b5563; /* Gris oscuro */
+    color: #4b5563;
+    /* Gris oscuro */
     font-size: 20px;
 }
 
@@ -152,8 +368,9 @@ html, body {
     z-index: 1000;
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
-    box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
-    transform: translateY(100%); /* Oculto por defecto */
+    box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+    transform: translateY(100%);
+    /* Oculto por defecto */
     transition: transform 0.3s ease-in-out;
     padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)) 20px;
     box-sizing: border-box;
@@ -186,9 +403,10 @@ html, body {
     background: white;
     padding: 8px 16px;
     border-radius: 20px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     z-index: 1000;
-    display: none; /* Oculto por defecto */
+    display: none;
+    /* Oculto por defecto */
     align-items: center;
     justify-content: center;
     gap: 10px;
@@ -213,13 +431,14 @@ html, body {
 /* --- Panel de Capas --- */
 #layers-panel {
     position: absolute;
-    right: -320px; /* Oculto fuera de pantalla */
+    right: -320px;
+    /* Oculto fuera de pantalla */
     top: 0;
     width: 300px;
     height: 100%;
     background: white;
     z-index: 1100;
-    box-shadow: -4px 0 15px rgba(0,0,0,0.15);
+    box-shadow: -4px 0 15px rgba(0, 0, 0, 0.15);
     transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     padding: 20px;
     box-sizing: border-box;
@@ -300,7 +519,7 @@ html, body {
     border-radius: 8px;
     overflow: hidden;
     margin-bottom: 6px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 .layer-thumbnail img {
@@ -393,14 +612,14 @@ html, body {
     background-color: white;
     border-radius: 50%;
     transition: transform 0.3s;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.toggle-switch input:checked + .toggle-slider {
+.toggle-switch input:checked+.toggle-slider {
     background-color: #3b82f6;
 }
 
-.toggle-switch input:checked + .toggle-slider::before {
+.toggle-switch input:checked+.toggle-slider::before {
     transform: translateX(20px);
 }
 
@@ -411,7 +630,7 @@ html, body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0,0,0,0.3);
+    background: rgba(0, 0, 0, 0.3);
     z-index: 1050;
     opacity: 0;
     pointer-events: none;
@@ -640,9 +859,11 @@ html, body {
     0% {
         box-shadow: 0 0 0 0 rgba(67, 56, 202, 0.6);
     }
+
     70% {
         box-shadow: 0 0 0 14px rgba(67, 56, 202, 0);
     }
+
     100% {
         box-shadow: 0 0 0 0 rgba(67, 56, 202, 0);
     }
@@ -781,4 +1002,3 @@ html, body {
 #route-summary:not(.hidden) {
     display: flex;
 }
-

@@ -1,313 +1,67 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>Aplicación de Tráfico</title>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#2563eb">
-    <link rel="icon" href="icons/icon-192.png">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Tráfico">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/styles.css">
-</head>
-<body>
-    <div id="auth-gate">
-        <div class="auth-gate-box">
-            <h2><i class="fas fa-map-location-dot"></i> Tráfico Simulado</h2>
-            <p class="control-point-modal-subtitle">Inicia sesión para ver el mapa.</p>
-            <form id="gate-auth-form" onsubmit="submitGateAuthForm(event)">
-                <div id="gate-name-group" class="hidden">
-                    <label class="cp-label">Nombre</label>
-                    <input type="text" id="gate-name" class="cp-input">
-                </div>
-                <label class="cp-label">Correo</label>
-                <input type="email" id="gate-email" class="cp-input" required>
-                <label class="cp-label">Contraseña</label>
-                <input type="password" id="gate-password" class="cp-input" minlength="6" required>
-                <button type="submit" class="cp-btn cp-btn-primary" id="gate-submit-btn"
-                    style="width:100%; margin-top:16px;">Iniciar sesión</button>
-            </form>
-            <p class="auth-toggle-text">
-                <span id="gate-toggle-text">¿No tienes cuenta?</span>
-                <a href="#" onclick="toggleGateAuthMode(event)" id="gate-toggle-link">Regístrate</a>
-            </p>
-            <p id="gate-error" class="gate-error hidden"></p>
-        </div>
-    </div>
-    <div id="map-container">
-        <div id="map"></div>
-        <div id="layers-backdrop" onclick="toggleLayersPanel()"></div>
-        <div class="search-bar">
-            <i class="fas fa-search text-gray-400"></i>
-            <input type="text" id="search-input" placeholder="Buscar lugar o dirección..."
-                onkeypress="handleSearch(event)">
-            <button onclick="clearSearch()" id="clear-btn"
-                class="hidden text-gray-400 hover:text-gray-600 focus:outline-none">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="action-buttons">
-            <button class="round-btn" onclick="openAuthModal()" title="Iniciar sesión" id="auth-btn">
-                <i class="fas fa-user text-gray-600"></i>
-            </button>
-            <button class="round-btn" onclick="toggleLayersPanel()" title="Capas del mapa" id="layers-btn">
-                <i class="fas fa-layer-group text-blue-500"></i>
-            </button>
-            <button class="round-btn" onclick="openHistoryPanel()" title="Historial de puntos resueltos"
-                id="history-btn">
-                <i class="fas fa-clock-rotate-left text-gray-600"></i>
-            </button>
-            <button class="round-btn" onclick="locateUser()" title="Mi ubicación">
-                <i class="fas fa-location-arrow text-gray-600 hover:text-blue-500"></i>
-            </button>
-            <button class="round-btn" onclick="toggleAddPointMode()" title="Registrar punto de control"
-                id="add-point-btn">
-                <i class="fas fa-map-pin text-gray-600"></i>
-            </button>
-            <button class="round-btn" onclick="toggleRouteMode()" title="Trazar ruta entre dos puntos"
-                id="route-mode-btn">
-                <i class="fas fa-route text-gray-600"></i>
-            </button>
-            <button class="round-btn hidden" onclick="toggleShareLocation()" title="Compartir mi ubicación en vivo"
-                id="share-location-btn">
-                <i class="fas fa-broadcast-tower text-indigo-600"></i>
-            </button>
-            <button class="round-btn hidden" onclick="openAdminPanel()" title="Administrar usuarios"
-                id="admin-panel-btn">
-                <i class="fas fa-user-gear text-purple-600"></i>
-            </button>
-        </div>
-        <div id="layers-panel">
-            <div class="layers-panel-header">
-                <h3>Tipo de mapa</h3>
-                <button onclick="toggleLayersPanel()" class="layers-close-btn">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="base-layers-grid">
-                <div class="base-layer-option active" onclick="switchBaseLayer('standard')" id="layer-standard">
-                    <div class="layer-thumbnail">
-                        <img src="https://mt1.google.com/vt/lyrs=m&x=35&y=51&z=7" alt="Estándar">
-                    </div>
-                    <span>Estándar</span>
-                </div>
-                <div class="base-layer-option" onclick="switchBaseLayer('dark')" id="layer-dark">
-                    <div class="layer-thumbnail">
-                        <img src="https://a.basemaps.cartocdn.com/dark_all/7/35/51.png" alt="Oscuro">
-                    </div>
-                    <span>Oscuro</span>
-                </div>
-                <div class="base-layer-option" onclick="switchBaseLayer('satellite')" id="layer-satellite">
-                    <div class="layer-thumbnail">
-                        <img src="https://mt1.google.com/vt/lyrs=s&x=35&y=51&z=7" alt="Satélite">
-                    </div>
-                    <span>Satélite</span>
-                </div>
-                <div class="base-layer-option" onclick="switchBaseLayer('topographic')" id="layer-topographic">
-                    <div class="layer-thumbnail">
-                        <img src="https://tile.opentopomap.org/7/35/51.png" alt="Topográfico">
-                    </div>
-                    <span>Topográfico</span>
-                </div>
-            </div>
-            <div class="layers-divider"></div>
-            <h3 class="layers-section-title">Detalles del mapa</h3>
-            <div class="overlay-option">
-                <div class="overlay-info">
-                    <i class="fas fa-car-side" style="color: #E32119;"></i>
-                    <span>Tráfico</span>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="traffic-toggle" onchange="toggleTrafficLayer()">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-            <div class="overlay-option">
-                <div class="overlay-info">
-                    <i class="fas fa-draw-polygon" style="color: #7c3aed;"></i>
-                    <span>Límite San Salvador Sur</span>
-                </div>
-                <label class="toggle-switch">
-                    <input type="checkbox" id="boundary-toggle" onchange="toggleBoundaryLayer()" checked>
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-        </div>
-        <div id="traffic-legend" class="flex">
-            <span>Tráfico: Rápida</span>
-            <div class="legend-colors">
-                <div style="background: #15B85D;"></div> 
-                <div style="background: #FF9900;"></div> 
-                <div style="background: #E32119;"></div> 
-                <div style="background: #80110D;"></div> 
-            </div>
-            <span>Lenta</span>
-        </div>
-        <div id="bottom-panel" class="flex flex-col">
-            <div class="panel-handle"></div>
-            <div class="flex justify-between items-start mb-2">
-                <h2 id="place-title" class="text-xl font-bold text-gray-800">Ubicación Seleccionada</h2>
-                <button onclick="closePanel()" class="text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-            </div>
-            <p id="place-address" class="text-sm text-gray-600 mb-4">Cargando dirección...</p>
-            <div id="route-summary" class="hidden gap-5 mb-4 text-sm font-semibold text-gray-800">
-                <span><i class="fas fa-road text-blue-500"></i> <span id="route-distance">-</span></span>
-                <span><i class="fas fa-clock text-blue-500"></i> <span id="route-duration">-</span></span>
-            </div>
-            <div id="route-options" class="hidden mb-2">
-                <div id="route-options-list" class="flex flex-col gap-2 mb-3"></div>
-                <button onclick="cancelRoute()"
-                    class="w-full border border-gray-300 hover:bg-gray-100 text-gray-700 py-2 rounded-full font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-xmark"></i> Cancelar
-                </button>
-            </div>
-            <div class="flex gap-2" id="place-actions">
-                <button onclick="routeToSearchedPlace()"
-                    class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-full font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-directions"></i> Indicaciones
-                </button>
-                <button
-                    class="flex-1 border border-gray-300 hover:bg-gray-100 text-gray-700 py-2 rounded-full font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-share-alt"></i> Compartir
-                </button>
-            </div>
-            <div class="flex gap-2 hidden" id="route-actions">
-                <button onclick="cancelRoute()"
-                    class="flex-1 border border-gray-300 hover:bg-gray-100 text-gray-700 py-2 rounded-full font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-xmark"></i> Cancelar ruta
-                </button>
-                <button onclick="startNavigation()"
-                    class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-full font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-location-arrow"></i> Iniciar ruta
-                </button>
-            </div>
-            <div class="flex gap-2 hidden" id="navigation-actions">
-                <button onclick="stopNavigation()"
-                    class="flex-1 border border-gray-300 hover:bg-gray-100 text-gray-700 py-2 rounded-full font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-stop"></i> Detener ruta
-                </button>
-            </div>
-        </div>
-        <div id="control-point-backdrop" class="control-point-backdrop" onclick="closeControlPointForm()"></div>
-        <div id="control-point-modal" class="control-point-modal">
-            <h3>Registrar punto de control</h3>
-            <p class="control-point-modal-subtitle">Ubicación: <span id="control-point-coords">-</span></p>
-            <form id="control-point-form" onsubmit="submitControlPoint(event)">
-                <label class="cp-label">Tipo</label>
-                <select id="cp-type" class="cp-input" required>
-                    <option value="reten">Retén policial</option>
-                    <option value="accidente">Accidente</option>
-                    <option value="congestion">Congestión</option>
-                    <option value="obra_vial">Obra vial</option>
-                    <option value="semaforo_danado">Semáforo dañado</option>
-                    <option value="otro">Otro</option>
-                </select>
-                <label class="cp-label">Severidad</label>
-                <select id="cp-severity" class="cp-input">
-                    <option value="baja">Baja</option>
-                    <option value="media" selected>Media</option>
-                    <option value="alta">Alta</option>
-                </select>
-                <label class="cp-label">Descripción (opcional)</label>
-                <textarea id="cp-description" class="cp-input" rows="3" maxlength="280"
-                    placeholder="Detalles adicionales..."></textarea>
-                <div class="cp-actions">
-                    <button type="button" class="cp-btn cp-btn-secondary"
-                        onclick="closeControlPointForm()">Cancelar</button>
-                    <button type="submit" class="cp-btn cp-btn-primary" id="cp-submit-btn">Guardar</button>
-                </div>
-            </form>
-        </div>
-        <div id="auth-backdrop" class="control-point-backdrop" onclick="closeAuthModal()"></div>
-        <div id="auth-modal" class="control-point-modal">
-            <h3 id="auth-modal-title">Iniciar sesión</h3>
-            <p class="control-point-modal-subtitle" id="auth-modal-subtitle">Inicia sesión para registrar y confirmar
-                puntos de control.</p>
-            <form id="auth-form" onsubmit="submitAuthForm(event)">
-                <div id="auth-name-group" class="hidden">
-                    <label class="cp-label">Nombre</label>
-                    <input type="text" id="auth-name" class="cp-input">
-                </div>
-                <label class="cp-label">Correo</label>
-                <input type="email" id="auth-email" class="cp-input" required>
-                <label class="cp-label">Contraseña</label>
-                <input type="password" id="auth-password" class="cp-input" minlength="6" required>
-                <div class="cp-actions">
-                    <button type="button" class="cp-btn cp-btn-secondary" onclick="closeAuthModal()">Cancelar</button>
-                    <button type="submit" class="cp-btn cp-btn-primary" id="auth-submit-btn">Iniciar sesión</button>
-                </div>
-            </form>
-            <p class="auth-toggle-text">
-                <span id="auth-toggle-text">¿No tienes cuenta?</span>
-                <a href="#" onclick="toggleAuthMode(event)" id="auth-toggle-link">Regístrate</a>
-            </p>
-        </div>
-        <div id="admin-backdrop" class="control-point-backdrop" onclick="closeAdminPanel()"></div>
-        <div id="admin-modal" class="control-point-modal admin-modal">
-            <h3>Administrar usuarios</h3>
-            <p class="control-point-modal-subtitle">Crea usuarios y asigna su rol.</p>
-            <form id="create-user-form" onsubmit="submitCreateUser(event)">
-                <label class="cp-label">Nombre</label>
-                <input type="text" id="new-user-name" class="cp-input" required>
-                <label class="cp-label">Correo</label>
-                <input type="email" id="new-user-email" class="cp-input" required>
-                <label class="cp-label">Contraseña temporal</label>
-                <input type="password" id="new-user-password" class="cp-input" minlength="6" required>
-                <label class="cp-label">Rol</label>
-                <select id="new-user-role" class="cp-input">
-                    <option value="ciudadano">Ciudadano</option>
-                    <option value="agente">Agente</option>
-                    <option value="admin">Admin</option>
-                </select>
-                <div class="cp-actions">
-                    <button type="button" class="cp-btn cp-btn-secondary" onclick="closeAdminPanel()">Cerrar</button>
-                    <button type="submit" class="cp-btn cp-btn-primary" id="create-user-btn">Crear usuario</button>
-                </div>
-            </form>
-            <div class="layers-divider"></div>
-            <h3 class="layers-section-title">Usuarios existentes</h3>
-            <div id="user-list" class="user-list">
-                <p class="text-sm text-gray-500">Cargando...</p>
-            </div>
-        </div>
-        <div id="history-backdrop" class="control-point-backdrop" onclick="closeHistoryPanel()"></div>
-        <div id="history-modal" class="control-point-modal admin-modal">
-            <h3>Historial de puntos resueltos</h3>
-            <p class="control-point-modal-subtitle">Mueve el mapa a la zona que te interesa y elige un rango de fechas.
-            </p>
-            <label class="cp-label">Desde</label>
-            <input type="date" id="history-from" class="cp-input">
-            <label class="cp-label">Hasta</label>
-            <input type="date" id="history-to" class="cp-input">
-            <div class="cp-actions">
-                <button type="button" class="cp-btn cp-btn-secondary" onclick="closeHistoryPanel()">Cerrar</button>
-                <button type="button" class="cp-btn cp-btn-primary" onclick="loadHistory()">Buscar en esta área</button>
-            </div>
-            <div class="layers-divider"></div>
-            <div id="history-list" class="user-list">
-                <p class="text-sm text-gray-500">Elige un rango de fechas y busca.</p>
-            </div>
-        </div>
-        <div id="toast-container"
-            class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[2000] flex flex-col gap-2 pointer-events-none">
-        </div>
-    </div>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="/js/config.js"></script>
-    <script src="/js/app.js"></script>
-</body>
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Iniciar Sesión - Visor de Gestión de Tráfico</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Tráfico">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+    <div id="auth-gate" class="standalone-login">
+        <div class="auth-gate-box">
+            <img src="icons/logo.png" alt="San Salvador Sur Logo" class="auth-gate-logo">
+            <span class="auth-gate-brand">San Salvador Sur</span>
+            <h2>VGT</h2>
+            <span class="auth-gate-subtitle">Visor de Gestión de Tráfico</span>
+
+            <form id="gate-auth-form" onsubmit="submitGateAuthForm(event)">
+                <label class="cp-label">Correo Electrónico</label>
+                <div class="auth-input-wrap">
+                    <i class="fas fa-envelope auth-icon"></i>
+                    <input type="email" id="gate-email" class="cp-input" placeholder="usuario@sansalvadorsur.gob.sv"
+                        required>
+                </div>
+
+                <label class="cp-label">Contraseña</label>
+                <div class="auth-input-wrap">
+                    <i class="fas fa-lock auth-icon"></i>
+                    <input type="password" id="gate-password" class="cp-input has-eye" minlength="6" required
+                        placeholder="••••••••">
+                    <button type="button" class="auth-eye" id="gate-toggle-eye" title="Mostrar/ocultar contraseña">
+                        <i class="fas fa-eye" id="gate-eye-icon"></i>
+                    </button>
+                </div>
+
+                <button type="submit" class="cp-btn cp-btn-primary" id="gate-submit-btn">
+                    Iniciar Sesión &nbsp;<i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+
+            <p id="gate-error" class="gate-error hidden"></p>
+        </div>
+
+        <p class="auth-gate-note">
+            Acceso exclusivo al personal autorizado.<br>
+            Las cuentas son administradas por el sistema de San Salvador Sur.
+        </p>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module" src="/js/config.js"></script>
+    <script type="module" src="/js/auth.js"></script>
+</body>
+
 </html>

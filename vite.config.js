@@ -1,10 +1,16 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
-    // El index.html está en la raíz, Vite lo toma como entrada por defecto
     root: '.',
     build: {
-        outDir: 'dist'
+        outDir: 'dist',
+        rollupOptions: {
+            input: {
+                main: resolve(import.meta.dirname, 'index.html'),
+                mapa: resolve(import.meta.dirname, 'mapa/index.html')
+            }
+        }
     },
     server: {
         port: 5173
