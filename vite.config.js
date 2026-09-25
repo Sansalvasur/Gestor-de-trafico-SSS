@@ -1,8 +1,4 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
     root: '.',
@@ -10,8 +6,8 @@ export default defineConfig({
         outDir: 'dist',
         rollupOptions: {
             input: {
-                main: resolve(__dirname, 'index.html'),
-                mapa: resolve(__dirname, 'mapa/index.html')
+                main: 'index.html',
+                mapa: 'mapa/index.html'
             }
         }
     },
