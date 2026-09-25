@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
 
 export default defineConfig({
     root: '.',
@@ -7,8 +6,8 @@ export default defineConfig({
         outDir: 'dist',
         rollupOptions: {
             input: {
-                main: resolve(import.meta.dirname, 'index.html'),
-                mapa: resolve(import.meta.dirname, 'mapa/index.html')
+                main: 'index.html',
+                mapa: 'mapa/map.html'
             }
         }
     },
