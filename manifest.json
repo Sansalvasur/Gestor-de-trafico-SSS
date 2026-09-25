@@ -1,5 +1,5 @@
 {
-  "name": "Tráfico Simulado - San Salvador Sur",
+  "name": "Visor de Gestion de Tráfico",
   "short_name": "Tráfico",
   "description": "Reporta y consulta puntos de control de tráfico en tiempo real: retenes, accidentes, congestión, obras viales y más.",
   "start_url": "./index.html",
