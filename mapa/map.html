@@ -75,6 +75,11 @@
                 id="admin-panel-btn">
                 <i class="fas fa-user-gear text-purple-600"></i>
             </button>
+
+            <button class="round-btn hidden" onclick="openDashboard()" title="Dashboard de atención a reportes"
+                id="dashboard-btn">
+                <i class="fas fa-chart-column text-emerald-600"></i>
+            </button>
         </div>
 
         <div id="layers-panel">
@@ -171,6 +176,7 @@
                     <span id="route-duration" class="text-2xl font-black text-blue-900">-- min</span>
                     <span id="route-distance" class="text-sm font-semibold text-blue-700">-- km</span>
                 </div>
+                <p id="route-traffic" class="hidden mt-2 text-sm font-semibold"></p>
             </div>
 
             <!-- Alternativas de Ruta -->
@@ -227,6 +233,13 @@
                     <option value="alta">Alta</option>
                 </select>
 
+                <div id="cp-group-field" class="hidden">
+                    <label class="cp-label">Grupo que lo resolverá</label>
+                    <select id="cp-group" class="cp-input">
+                        <option value="">Sin asignar</option>
+                    </select>
+                </div>
+
                 <label class="cp-label">Descripción (opcional)</label>
                 <textarea id="cp-description" class="cp-input" rows="3" maxlength="280"
                     placeholder="Detalles adicionales..."></textarea>
@@ -248,7 +261,15 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <p class="control-point-modal-subtitle">Crea usuarios y asigna su rol.</p>
+            <p class="control-point-modal-subtitle">Mira quién está en línea, crea usuarios y asigna su rol.</p>
+
+            <h3 class="layers-section-title">En línea ahora <span id="online-users-count" class="presence-count"></span></h3>
+            <div id="online-users-list" class="user-list">
+                <p class="text-sm text-gray-500">Cargando...</p>
+            </div>
+
+            <div class="layers-divider" style="margin-top:16px;"></div>
+            <h3 class="layers-section-title">Crear usuario</h3>
 
             <form id="create-user-form" onsubmit="submitCreateUser(event)">
                 <label class="cp-label">Nombre</label>
@@ -301,6 +322,51 @@
             <div class="layers-divider"></div>
             <div id="history-list" class="user-list">
                 <p class="text-sm text-gray-500">Elige un rango de fechas y busca.</p>
+            </div>
+        </div>
+
+        <!-- Modal: Dashboard de Atención a Reportes -->
+        <div id="dashboard-backdrop" class="control-point-backdrop" onclick="closeDashboard()"></div>
+        <div id="dashboard-modal" class="control-point-modal dashboard-modal">
+            <div class="layers-panel-header">
+                <h3>Atención a reportes</h3>
+                <button onclick="closeDashboard()" class="layers-close-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="dash-filters">
+                <div>
+                    <label class="cp-label" for="dashboard-from">Desde</label>
+                    <input type="date" id="dashboard-from" class="cp-input">
+                </div>
+                <div>
+                    <label class="cp-label" for="dashboard-to">Hasta</label>
+                    <input type="date" id="dashboard-to" class="cp-input">
+                </div>
+                <button type="button" class="cp-btn cp-btn-primary" onclick="loadDashboard()">Actualizar</button>
+                <button type="button" class="cp-btn cp-btn-secondary" id="dashboard-export-btn"
+                    onclick="exportDashboardExcel()" disabled>
+                    <i class="fas fa-file-excel"></i> Exportar a Excel
+                </button>
+            </div>
+
+            <div id="dashboard-content">
+                <p class="text-sm text-gray-500">Cargando...</p>
+            </div>
+
+            <div id="dashboard-groups-section" class="hidden">
+                <div class="layers-divider"></div>
+                <h3 class="layers-section-title">Grupos de agentes</h3>
+                <p class="control-point-modal-subtitle">Crea grupos, asigna agentes y delega quién va de encargado.</p>
+
+                <form id="create-group-form" class="dash-group-form" onsubmit="submitCreateGroup(event)">
+                    <input type="text" id="new-group-name" class="cp-input" placeholder="Nombre del grupo" maxlength="60"
+                        required>
+                    <button type="submit" class="cp-btn cp-btn-primary">Crear grupo</button>
+                </form>
+
+                <div id="dashboard-groups-list" class="dash-groups-list"></div>
             </div>
         </div>
 

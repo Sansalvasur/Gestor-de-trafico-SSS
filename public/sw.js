@@ -1,14 +1,12 @@
 /* Public copy of service worker for production builds served from root */
-const CACHE_NAME = 'trafico-app-shell-v1';
+const CACHE_NAME = 'trafico-app-shell-v2';
 
+// Solo rutas que existen tal cual en el build (los JS/CSS llevan hash en el
+// nombre y se guardan en caché al vuelo, la primera vez que se piden).
 const APP_SHELL = [
   '/',
   '/index.html',
   '/mapa/map.html',
-  '/css/styles.css',
-  '/js/app.js',
-  '/js/auth.js',
-  '/js/config.js',
   '/manifest.json',
   '/data/san-salvador-sur.geojson',
   '/icons/icon-192.png',
@@ -18,7 +16,10 @@ const APP_SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      // Uno por uno: si un recurso falla no se cancela toda la instalación.
+      .then((cache) => Promise.all(
+        APP_SHELL.map((url) => cache.add(url).catch((err) => console.warn('SW: no se pudo cachear', url, err)))
+      ))
       .then(() => self.skipWaiting())
   );
 });
@@ -41,19 +42,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Red primero, caché como respaldo sin conexión: así nunca se sirve una
+  // versión vieja de la app (p. ej. un config.js sin credenciales).
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-
-      return cached || network;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
   );
 });

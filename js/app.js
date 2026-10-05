@@ -1,3 +1,5 @@
+import { downloadDashboardExcel } from './dashboard-export.js';
+
 let map;
 let userMarker;
 let searchMarker;
@@ -13,6 +15,11 @@ let supabaseClient;
 let isAddingPoint = false;
 let pendingLatLng = null;
 let controlPointMarkers = {};
+let controlPointsData = {};
+let agentGroupsById = {};
+let currentUserGroupId = null;
+const IN_PROGRESS_COLOR = '#16a34a';
+const CONTROL_POINTS_REFRESH_MS = 30000;
 let controlPointsCluster;
 let viewportLoadTimeout;
 const CONTROL_POINT_TYPES = {
@@ -37,6 +44,14 @@ let isSignupMode = false;
 let isSharingLocation = false;
 let locationWatchId = null;
 let lastLocationSentAt = 0;
+let lastSharedPosition = null;
+let locationHeartbeatId = null;
+let currentAccessToken = null;
+const AGENT_LOCATION_HEARTBEAT_MS = 30000;
+let presenceHeartbeatId = null;
+let onlineUsersRefreshId = null;
+const PRESENCE_HEARTBEAT_MS = 60000;
+const PRESENCE_ONLINE_WINDOW_MS = 150000; // sin señal por 2.5 min = desconectado
 let agentLocationMarkers = {};
 let agentLocationsData = {};
 const AGENT_LOCATION_STALE_MS = 2 * 60 * 1000;
@@ -119,6 +134,7 @@ async function initAuth() {
     if (!supabaseClient) return;
     const { data: { session } } = await supabaseClient.auth.getSession();
     currentUser = session ? session.user : null;
+    currentAccessToken = session ? session.access_token : null;
     if (currentUser) {
         await fetchUserProfile();
         startApp();
@@ -129,6 +145,7 @@ async function initAuth() {
     updateAuthUI();
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
         currentUser = session ? session.user : null;
+        currentAccessToken = session ? session.access_token : null;
         if (currentUser) {
             await fetchUserProfile();
             startApp();
@@ -143,11 +160,37 @@ function startApp() {
     if (appStarted) return;
     appStarted = true;
     initMap();
-    loadControlPointsInView();
+    loadAgentGroups().then(() => loadControlPointsInView());
+    // Refresco periódico: así los demás ven cuando un punto pasa a "en proceso" o se resuelve
+    setInterval(() => loadControlPointsInView(true), CONTROL_POINTS_REFRESH_MS);
     loadBoundaryLayer();
     loadAgentLocations();
     setInterval(sweepStaleAgentMarkers, 60000);
+    startPresenceHeartbeat();
     setTimeout(() => locateUser(true), 500);
+    fixMapSizeOnceReady();
+}
+
+// Leaflet mide el tamaño de #map en el instante en que se crea el mapa.
+// Si en ese momento el CSS (styles.css, Tailwind CDN, leaflet.css) todavía
+// no terminó de aplicar el layout, el mapa queda con un tamaño/posición
+// incorrectos y no se autocorrige solo. Forzamos un recálculo (invalidateSize)
+// en varios momentos "seguros" para que nunca dependa de que el usuario refresque.
+function fixMapSizeOnceReady() {
+    if (!map) return;
+    // Recalcula ni bien el frame actual termina de pintar.
+    requestAnimationFrame(() => map.invalidateSize());
+    // Recalcula cuando TODOS los recursos externos (CSS, fuentes, CDNs) ya cargaron.
+    if (document.readyState === 'complete') {
+        map.invalidateSize();
+    } else {
+        window.addEventListener('load', () => map.invalidateSize(), { once: true });
+    }
+    // Red de seguridad: por si algún CSS tarda más de lo normal (dev server frío).
+    setTimeout(() => map.invalidateSize(), 300);
+    setTimeout(() => map.invalidateSize(), 1000);
+    // Si el contenedor cambia de tamaño después (rotar el teléfono, etc.).
+    window.addEventListener('resize', () => map.invalidateSize());
 }
 function openAuthModal() {
     const backdrop = document.getElementById('auth-modal-backdrop');
@@ -175,6 +218,10 @@ function closeAuthModal() {
 }
 async function logoutUser() {
     if (supabaseClient) {
+        // Quitar el punto del agente ANTES de cerrar sesión (después ya no hay permiso para borrarlo)
+        stopLocationWatch();
+        stopPresenceHeartbeat();
+        await Promise.all([deleteOwnAgentLocation(), supabaseClient.rpc('set_presence', { p_online: false })]);
         await supabaseClient.auth.signOut();
     }
     window.location.replace('/');
@@ -182,10 +229,19 @@ async function logoutUser() {
 async function fetchUserProfile() {
     const { data, error } = await supabaseClient
         .from('profiles')
-        .select('role')
+        .select('role, group_id')
         .eq('id', currentUser.id)
         .single();
     currentUserRole = (!error && data) ? data.role : 'ciudadano';
+    currentUserGroupId = (!error && data) ? data.group_id : null;
+}
+async function loadAgentGroups() {
+    const { data, error } = await supabaseClient.from('agent_groups').select('id, name').order('name');
+    if (error) {
+        console.error('Error al cargar grupos:', error.message);
+        return;
+    }
+    agentGroupsById = Object.fromEntries(data.map(g => [g.id, g.name]));
 }
 function updateAuthUI() {
     const btn = document.getElementById('auth-btn');
@@ -216,15 +272,91 @@ function updateRoleUI() {
     } else {
         adminBtn.classList.add('hidden');
     }
+    const dashboardBtn = document.getElementById('dashboard-btn');
+    if (currentUser && ['agente', 'admin'].includes(currentUserRole)) {
+        dashboardBtn.classList.remove('hidden');
+    } else {
+        dashboardBtn.classList.add('hidden');
+    }
 }
 function openAdminPanel() {
     document.getElementById('admin-backdrop').classList.add('active');
     document.getElementById('admin-modal').classList.add('active');
     loadUserList();
+    loadOnlineUsers();
+    clearInterval(onlineUsersRefreshId);
+    onlineUsersRefreshId = setInterval(loadOnlineUsers, 30000);
 }
 function closeAdminPanel() {
     document.getElementById('admin-backdrop').classList.remove('active');
     document.getElementById('admin-modal').classList.remove('active');
+    clearInterval(onlineUsersRefreshId);
+    onlineUsersRefreshId = null;
+}
+// =============================================
+// Usuarios en línea (requiere supabase/schema_online_users.sql)
+// =============================================
+function startPresenceHeartbeat() {
+    sendPresence();
+    presenceHeartbeatId = setInterval(sendPresence, PRESENCE_HEARTBEAT_MS);
+}
+function stopPresenceHeartbeat() {
+    clearInterval(presenceHeartbeatId);
+    presenceHeartbeatId = null;
+}
+async function sendPresence() {
+    if (!currentUser || !supabaseClient) return;
+    const { error } = await supabaseClient.rpc('set_presence', { p_online: true });
+    if (error) {
+        console.warn('No se pudo registrar la presencia:', error.message);
+        // Sin la migración no tiene sentido seguir intentando cada minuto
+        if (error.code === 'PGRST202') stopPresenceHeartbeat();
+    }
+}
+function formatLastSeen(isoDate) {
+    if (!isoDate) return 'nunca ha entrado';
+    const minutes = Math.round((Date.now() - new Date(isoDate).getTime()) / 60000);
+    if (minutes < 1) return 'hace un momento';
+    if (minutes < 60) return `hace ${minutes} min`;
+    if (minutes < 1440) return `hace ${Math.floor(minutes / 60)} h`;
+    return new Date(isoDate).toLocaleDateString('es-SV', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+async function loadOnlineUsers() {
+    const listEl = document.getElementById('online-users-list');
+    const countEl = document.getElementById('online-users-count');
+    const { data, error } = await supabaseClient
+        .from('profiles')
+        .select('id, full_name, email, role, last_seen_at, is_online')
+        .order('last_seen_at', { ascending: false, nullsFirst: false });
+    if (error) {
+        console.error('Error al cargar usuarios en línea:', error.message);
+        countEl.innerText = '';
+        listEl.innerHTML = `<p class="text-sm text-red-500">${error.code === '42703'
+            ? 'Falta ejecutar supabase/schema_online_users.sql en el SQL Editor de Supabase.'
+            : 'No se pudo cargar quién está en línea.'}</p>`;
+        return;
+    }
+    const cutoff = Date.now() - PRESENCE_ONLINE_WINDOW_MS;
+    const isOnline = (u) => u.is_online && u.last_seen_at && new Date(u.last_seen_at).getTime() > cutoff;
+    const roleLabel = { ciudadano: 'Ciudadano', agente: 'Agente', admin: 'Admin' };
+    const online = data.filter(isOnline);
+    const offline = data.filter(u => !isOnline(u));
+    countEl.innerText = `${online.length} de ${data.length}`;
+    const row = (u, on) => `
+        <div class="user-row">
+            <span class="presence-dot ${on ? 'presence-on' : 'presence-off'}"></span>
+            <span class="user-row-email">
+                <b>${escapeHtml(u.full_name || u.email || u.id)}</b>${u.id === currentUser.id ? ' (tú)' : ''}<br>
+                <small>${roleLabel[u.role] || u.role} · ${on ? 'en línea' : `últ. vez ${formatLastSeen(u.last_seen_at)}`}</small>
+            </span>
+        </div>
+    `;
+    listEl.innerHTML = (online.length ? online.map(u => row(u, true)).join('') : '<p class="text-sm text-gray-500">Nadie en línea.</p>')
+        + (offline.length ? `
+            <details class="presence-offline">
+                <summary>Desconectados (${offline.length})</summary>
+                ${offline.map(u => row(u, false)).join('')}
+            </details>` : '');
 }
 async function submitCreateUser(event) {
     event.preventDefault();
@@ -299,7 +431,7 @@ async function updateUserRole(userId, newRole) {
     showToast('Rol actualizado.', 'success');
 }
 
-async function loadControlPointsInView() {
+async function loadControlPointsInView(silent = false) {
     if (!supabaseClient) return;
     const bounds = map.getBounds();
     const { data, error } = await supabaseClient.rpc('control_points_in_bbox', {
@@ -310,21 +442,27 @@ async function loadControlPointsInView() {
     });
     if (error) {
         console.error('Error al cargar puntos de control:', error.message);
-        showToast('No se pudieron cargar los puntos de control.', 'error');
+        if (silent !== true) showToast('No se pudieron cargar los puntos de control.', 'error');
         return;
     }
     const idsInView = new Set(data.map(p => p.id));
     Object.keys(controlPointMarkers).forEach(id => {
-        if (!idsInView.has(id)) {
-            controlPointsCluster.removeLayer(controlPointMarkers[id]);
-            delete controlPointMarkers[id];
-        }
+        if (!idsInView.has(id)) removeControlPointMarker(id);
     });
     data.forEach(point => {
         if (!controlPointMarkers[point.id]) {
             renderControlPointMarker(point);
+        } else {
+            refreshControlPointMarker(point);
         }
     });
+}
+function removeControlPointMarker(pointId) {
+    if (controlPointMarkers[pointId]) {
+        controlPointsCluster.removeLayer(controlPointMarkers[pointId]);
+        delete controlPointMarkers[pointId];
+    }
+    delete controlPointsData[pointId];
 }
 function escapeHtml(text) {
     return String(text)
@@ -334,40 +472,96 @@ function escapeHtml(text) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
-function getControlPointIcon(type) {
+function getControlPointIcon(type, inProgress) {
     const meta = CONTROL_POINT_TYPES[type] || CONTROL_POINT_TYPES.otro;
+    // En proceso (ya hay alguien en el lugar): el marcador se pinta de verde
+    const color = inProgress ? IN_PROGRESS_COLOR : meta.color;
     return L.divIcon({
         className: 'custom-div-icon',
-        html: `<div class="control-point-icon" style="background-color:${meta.color};"><i class="fas ${meta.icon}"></i></div>`,
+        html: `<div class="control-point-icon${inProgress ? ' in-progress' : ''}" style="background-color:${color};"><i class="fas ${meta.icon}"></i></div>`,
         iconSize: [30, 30],
         iconAnchor: [15, 30],
         popupAnchor: [0, -30]
     });
 }
 function renderControlPointMarker(point) {
-    const marker = L.marker([point.lat, point.lng], { icon: getControlPointIcon(point.type) });
-    marker.bindPopup(buildControlPointPopupHtml(point));
+    controlPointsData[point.id] = point;
+    const marker = L.marker([point.lat, point.lng], { icon: getControlPointIcon(point.type, !!point.attention_started_at) });
+    // Contenido como función: se arma cada vez que se abre, con el estado más reciente
+    marker.bindPopup(() => buildControlPointPopupHtml(controlPointsData[point.id]));
     controlPointsCluster.addLayer(marker);
     controlPointMarkers[point.id] = marker;
     return marker;
 }
+function refreshControlPointMarker(point) {
+    const previous = controlPointsData[point.id];
+    const marker = controlPointMarkers[point.id];
+    controlPointsData[point.id] = point;
+    if (!marker || !previous) return;
+    const changed = previous.attention_started_at !== point.attention_started_at
+        || previous.assigned_group_id !== point.assigned_group_id
+        || previous.confirmations_count !== point.confirmations_count;
+    if (!changed) return;
+    marker.setIcon(getControlPointIcon(point.type, !!point.attention_started_at));
+    if (marker.isPopupOpen()) marker.getPopup().update();
+}
+function minutesBetween(fromIso, toIso) {
+    return (new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000;
+}
+function formatClock(iso) {
+    return new Date(iso).toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' });
+}
+// Admin: siempre. Agente: si el punto no tiene grupo asignado o si es de su grupo.
+function canAttendPoint(point) {
+    if (!currentUser) return false;
+    if (currentUserRole === 'admin') return true;
+    return currentUserRole === 'agente' && (!point.assigned_group_id || point.assigned_group_id === currentUserGroupId);
+}
 function buildControlPointPopupHtml(point) {
     const meta = CONTROL_POINT_TYPES[point.type] || CONTROL_POINT_TYPES.otro;
     const severityLabel = { baja: 'Baja', media: 'Media', alta: 'Alta' }[point.severity] || point.severity;
-    const canResolve = currentUser && (currentUser.id === point.reported_by || ['agente', 'admin'].includes(currentUserRole));
+    const inProgress = !!point.attention_started_at;
+    const canAttend = canAttendPoint(point);
+    const canResolve = canAttend || (currentUser && currentUser.id === point.reported_by);
+    const groupName = point.assigned_group_id ? (agentGroupsById[point.assigned_group_id] || 'Grupo') : null;
     return `
-        <div style="font-family:'Inter',sans-serif; min-width:170px;">
+        <div style="font-family:'Inter',sans-serif; min-width:190px;">
             <strong>${meta.label}</strong><br>
             <span style="font-size:12px; color:#6b7280;">Severidad: ${severityLabel}</span>
             ${point.description ? `<p style="margin:6px 0 0 0; font-size:13px;">${escapeHtml(point.description)}</p>` : ''}
+            <p class="cp-popup-meta"><i class="fas fa-people-group"></i> ${groupName ? `Asignado a: <b>${escapeHtml(groupName)}</b>` : 'Sin grupo asignado'}</p>
+            ${inProgress
+            ? `<p class="cp-popup-status in-progress"><i class="fas fa-circle"></i> En proceso desde las ${formatClock(point.attention_started_at)} (${formatDuration(minutesBetween(point.attention_started_at, new Date().toISOString()))})</p>`
+            : '<p class="cp-popup-status"><i class="fas fa-circle"></i> Pendiente: nadie ha llegado al lugar</p>'}
             <div class="cp-popup-actions">
                 <button onclick="confirmControlPoint('${point.id}')" class="cp-popup-btn">
                     <i class="fas fa-check"></i> Confirmar (<span id="cp-count-${point.id}">${point.confirmations_count || 0}</span>)
                 </button>
-                ${canResolve ? `<button onclick="resolveControlPoint('${point.id}')" class="cp-popup-btn cp-popup-btn-resolve">Resuelto</button>` : ''}
+                ${!inProgress && canAttend ? `<button onclick="startControlPointAttention('${point.id}')" class="cp-popup-btn cp-popup-btn-start"><i class="fas fa-location-dot"></i> Ya estoy en el lugar</button>` : ''}
+                ${canResolve ? `<button onclick="resolveControlPoint('${point.id}')" class="cp-popup-btn cp-popup-btn-resolve">${inProgress ? '<i class="fas fa-flag-checkered"></i> Finalizar' : 'Resuelto'}</button>` : ''}
             </div>
         </div>
     `;
+}
+async function startControlPointAttention(pointId) {
+    const { data, error } = await supabaseClient
+        .from('control_points')
+        .update({ attention_started_at: new Date().toISOString() })
+        .eq('id', pointId)
+        .is('attention_started_at', null)
+        .select();
+    if (error) {
+        console.error('Error al iniciar la atención:', error.message);
+        showToast(error.code === '42501' ? 'Solo el grupo asignado puede atender este punto.' : 'No se pudo marcar el inicio.', 'error');
+        return;
+    }
+    if (!data.length) {
+        showToast('Alguien más ya marcó el inicio en este punto.', 'info');
+        loadControlPointsInView();
+        return;
+    }
+    refreshControlPointMarker(data[0]);
+    showToast('Inicio marcado: el punto queda en proceso.', 'success');
 }
 async function confirmControlPoint(pointId) {
     if (!currentUser) {
@@ -392,21 +586,26 @@ async function confirmControlPoint(pointId) {
     showToast('¡Gracias por confirmar!', 'success');
 }
 async function resolveControlPoint(pointId) {
-    const { error } = await supabaseClient
+    const { data, error } = await supabaseClient
         .from('control_points')
         .update({ status: 'resuelto', resolved_at: new Date().toISOString() })
-        .eq('id', pointId);
+        .eq('id', pointId)
+        .select();
     if (error) {
         console.error('Error al resolver punto:', error.message);
         showToast('No se pudo marcar el punto como resuelto.', 'error');
         return;
     }
-    const marker = controlPointMarkers[pointId];
-    if (marker) {
-        controlPointsCluster.removeLayer(marker);
-        delete controlPointMarkers[pointId];
+    removeControlPointMarker(pointId);
+    const point = data && data[0];
+    if (point && point.resolved_at) {
+        const total = formatDuration(minutesBetween(point.created_at, point.resolved_at));
+        showToast(point.attention_started_at
+            ? `Finalizado. En el lugar: ${formatDuration(minutesBetween(point.attention_started_at, point.resolved_at))} · activo en total: ${total}.`
+            : `Punto resuelto. Estuvo activo ${total}.`, 'success');
+    } else {
+        showToast('Punto marcado como resuelto.', 'success');
     }
-    showToast('Punto marcado como resuelto.', 'success');
 }
 // =============================================
 // Historial de Puntos Resueltos (por zona/fecha)
@@ -464,6 +663,8 @@ async function loadHistory() {
                 <div style="flex:1;">
                     <strong style="font-size:13px;">${meta.label}</strong><br>
                     <span style="font-size:11px; color:#6b7280;">Resuelto: ${resolvedDate}</span>
+                    ${point.resolved_at ? `<br><span style="font-size:11px; color:#6b7280;">Activo en total: ${formatDuration(minutesBetween(point.created_at, point.resolved_at))}${point.attention_started_at ? ` · en el lugar: ${formatDuration(minutesBetween(point.attention_started_at, point.resolved_at))} (desde las ${formatClock(point.attention_started_at)})` : ''}</span>` : ''}
+                    ${point.assigned_group_id ? `<br><span style="font-size:11px; color:#6b7280;">Grupo: ${escapeHtml(agentGroupsById[point.assigned_group_id] || 'Grupo')}</span>` : ''}
                     ${point.description ? `<p style="margin:4px 0 0 0; font-size:12px;">${escapeHtml(point.description)}</p>` : ''}
                 </div>
             </div>
@@ -473,6 +674,308 @@ async function loadHistory() {
 function focusHistoryPoint(lat, lng) {
     closeHistoryPanel();
     map.flyTo([lat, lng], 17);
+}
+// =============================================
+// Dashboard de Atención a Reportes + Grupos de Agentes
+// (requiere supabase/schema_dashboard_groups.sql)
+// =============================================
+const DASHBOARD_MAX_DAYS = 92;
+let lastDashboardExport = null; // { stats, fromDate, toDate } de lo que se ve en pantalla
+const DASHBOARD_MISSING_SQL = 'Falta ejecutar supabase/schema_dashboard_groups.sql en el SQL Editor de Supabase.';
+function openDashboard() {
+    document.getElementById('dashboard-backdrop').classList.add('active');
+    document.getElementById('dashboard-modal').classList.add('active');
+    if (!document.getElementById('dashboard-from').value) {
+        const today = new Date();
+        const monthAgo = new Date(today.getTime() - 29 * 24 * 3600 * 1000);
+        document.getElementById('dashboard-from').value = toDateInputValue(monthAgo);
+        document.getElementById('dashboard-to').value = toDateInputValue(today);
+    }
+    loadDashboard();
+}
+function closeDashboard() {
+    document.getElementById('dashboard-backdrop').classList.remove('active');
+    document.getElementById('dashboard-modal').classList.remove('active');
+}
+function toDateInputValue(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function isMissingDashboardSchema(error) {
+    return ['PGRST202', 'PGRST205', '42883', '42P01', '42703'].includes(error.code);
+}
+function formatDuration(minutes) {
+    if (minutes == null) return '—';
+    const total = Math.round(minutes);
+    if (total < 60) return `${total} min`;
+    if (total < 1440) return `${Math.floor(total / 60)} h ${total % 60} min`;
+    return `${Math.floor(total / 1440)} d ${Math.floor((total % 1440) / 60)} h`;
+}
+async function loadDashboard() {
+    const contentEl = document.getElementById('dashboard-content');
+    const fromDate = document.getElementById('dashboard-from').value;
+    const toDate = document.getElementById('dashboard-to').value;
+    if (!fromDate || !toDate || fromDate > toDate) {
+        showToast('Elige un rango de fechas válido.', 'error');
+        return;
+    }
+    const from = new Date(`${fromDate}T00:00:00`);
+    const to = new Date(`${toDate}T23:59:59.999`);
+    if ((to - from) / (24 * 3600 * 1000) > DASHBOARD_MAX_DAYS) {
+        showToast(`El rango máximo es de ${DASHBOARD_MAX_DAYS} días.`, 'error');
+        return;
+    }
+    contentEl.innerHTML = '<p class="text-sm text-gray-500">Cargando...</p>';
+    lastDashboardExport = null;
+    document.getElementById('dashboard-export-btn').disabled = true;
+    const { data, error } = await supabaseClient.rpc('attention_stats', {
+        from_date: from.toISOString(),
+        to_date: to.toISOString()
+    });
+    if (error) {
+        console.error('Error al cargar estadísticas:', error.message);
+        contentEl.innerHTML = `<p class="text-sm text-red-500">${isMissingDashboardSchema(error) ? DASHBOARD_MISSING_SQL : 'No se pudieron cargar las estadísticas.'}</p>`;
+        return;
+    }
+    contentEl.innerHTML = buildDashboardHtml(data);
+    lastDashboardExport = { stats: data, fromDate, toDate };
+    document.getElementById('dashboard-export-btn').disabled = false;
+    const groupsSection = document.getElementById('dashboard-groups-section');
+    if (currentUserRole === 'admin') {
+        groupsSection.classList.remove('hidden');
+        loadGroups();
+    } else {
+        groupsSection.classList.add('hidden');
+    }
+}
+function buildDashboardHtml(stats) {
+    const t = stats.totals;
+    const pct = (n) => t.reported ? `${Math.round((n / t.reported) * 100)}%` : '—';
+    const tiles = [
+        { label: 'Reportes recibidos', value: t.reported, note: 'en el rango elegido' },
+        { label: 'Atendidos', value: t.resolved, note: `${pct(t.resolved)} de los recibidos` },
+        { label: 'Tiempo promedio de atención', value: formatDuration(t.avg_minutes), note: `mediana ${formatDuration(t.median_minutes)}` },
+        { label: 'Pendientes', value: t.active, note: 'siguen activos' },
+        { label: 'Expirados sin atender', value: t.expired, note: `${pct(t.expired)} de los recibidos` }
+    ];
+    const tilesHtml = tiles.map(tile => `
+        <div class="dash-tile">
+            <span class="dash-tile-label">${tile.label}</span>
+            <span class="dash-tile-value">${tile.value}</span>
+            <span class="dash-tile-note">${tile.note}</span>
+        </div>
+    `).join('');
+    if (!t.reported && !stats.by_day.some(d => d.resolved)) {
+        return `<div class="dash-tiles">${tilesHtml}</div><p class="text-sm text-gray-500">Sin reportes en este rango de fechas.</p>`;
+    }
+    return `
+        <div class="dash-tiles">${tilesHtml}</div>
+        <h4 class="dash-section-title">Reportes por tipo</h4>
+        ${buildTypeBarsHtml(stats.by_type)}
+        <h4 class="dash-section-title">Recibidos y atendidos por día</h4>
+        ${buildDailyChartHtml(stats.by_day)}
+        <h4 class="dash-section-title">Atención por agente</h4>
+        ${buildAgentTableHtml(stats.by_agent, stats.unattributed)}
+        <h4 class="dash-section-title">Atención por grupo</h4>
+        ${buildGroupTableHtml(stats.by_group)}
+    `;
+}
+function buildTypeBarsHtml(byType) {
+    if (!byType.length) return '<p class="text-sm text-gray-500">Sin datos.</p>';
+    const max = Math.max(...byType.map(r => r.reported));
+    return `<div class="dash-bars">${byType.map(row => {
+        const meta = CONTROL_POINT_TYPES[row.type] || CONTROL_POINT_TYPES.otro;
+        const detail = `${row.resolved} de ${row.reported} atendidos · ${formatDuration(row.avg_minutes)} en promedio`;
+        return `
+            <div class="dash-bar-row" title="${meta.label}: ${detail}">
+                <span class="dash-bar-label">${meta.label}</span>
+                <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${(row.reported / max) * 100}%"></div></div>
+                <span class="dash-bar-value">${row.reported}</span>
+                <span class="dash-bar-detail">${detail}</span>
+            </div>
+        `;
+    }).join('')}</div>`;
+}
+function buildDailyChartHtml(byDay) {
+    const max = Math.max(1, ...byDay.map(d => Math.max(d.reported, d.resolved)));
+    const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('es-SV', { day: 'numeric', month: 'short' });
+    const columns = byDay.map(d => `
+        <div class="dash-day" title="${dayLabel(d.day)}: ${d.reported} recibidos, ${d.resolved} atendidos">
+            <div class="dash-day-bar dash-series-reported" style="height:${(d.reported / max) * 100}%"></div>
+            <div class="dash-day-bar dash-series-resolved" style="height:${(d.resolved / max) * 100}%"></div>
+        </div>
+    `).join('');
+    return `
+        <div class="dash-legend">
+            <span><i class="dash-swatch dash-series-reported"></i> Recibidos</span>
+            <span><i class="dash-swatch dash-series-resolved"></i> Atendidos</span>
+            <span class="dash-legend-max">máx. ${max} por día</span>
+        </div>
+        <div class="dash-days">${columns}</div>
+        <div class="dash-days-axis">
+            <span>${dayLabel(byDay[0].day)}</span>
+            <span>${dayLabel(byDay[byDay.length - 1].day)}</span>
+        </div>
+    `;
+}
+function buildAgentTableHtml(byAgent, unattributed) {
+    if (!byAgent.length) return '<p class="text-sm text-gray-500">No hay agentes registrados.</p>';
+    const rows = byAgent.map(a => `
+        <tr>
+            <td>${escapeHtml(a.name || 'Sin nombre')}${a.is_leader ? ' <span class="dash-badge">Encargado</span>' : ''}</td>
+            <td>${a.group_name ? escapeHtml(a.group_name) : '—'}</td>
+            <td class="dash-num">${a.resolved}</td>
+            <td class="dash-num">${formatDuration(a.avg_minutes)}</td>
+        </tr>
+    `).join('');
+    return `
+        <table class="dash-table">
+            <thead><tr><th>Agente</th><th>Grupo</th><th class="dash-num">Atendidos</th><th class="dash-num">Tiempo prom.</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+        ${unattributed ? `<p class="dash-footnote">${unattributed} atenciones no tienen agente registrado (son anteriores a este dashboard o las cerró quien reportó).</p>` : ''}
+    `;
+}
+function buildGroupTableHtml(byGroup) {
+    if (!byGroup.length) return '<p class="text-sm text-gray-500">Aún no hay grupos creados.</p>';
+    const rows = byGroup.map(g => `
+        <tr>
+            <td>${escapeHtml(g.name)}</td>
+            <td>${g.leader_name ? escapeHtml(g.leader_name) : '<span class="dash-muted">Sin encargado</span>'}</td>
+            <td class="dash-num">${g.members}</td>
+            <td class="dash-num">${g.resolved}</td>
+            <td class="dash-num">${formatDuration(g.avg_minutes)}</td>
+        </tr>
+    `).join('');
+    return `
+        <table class="dash-table">
+            <thead><tr><th>Grupo</th><th>Encargado</th><th class="dash-num">Agentes</th><th class="dash-num">Atendidos</th><th class="dash-num">Tiempo prom.</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    `;
+}
+async function exportDashboardExcel() {
+    if (!lastDashboardExport) return;
+    const btn = document.getElementById('dashboard-export-btn');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerText = 'Generando...';
+    try {
+        const typeLabels = Object.fromEntries(Object.entries(CONTROL_POINT_TYPES).map(([key, meta]) => [key, meta.label]));
+        await downloadDashboardExcel(lastDashboardExport.stats, {
+            fromDate: lastDashboardExport.fromDate,
+            toDate: lastDashboardExport.toDate,
+            typeLabels
+        });
+        showToast('Excel descargado.', 'success');
+    } catch (error) {
+        console.error('Error al exportar a Excel:', error);
+        showToast('No se pudo generar el archivo de Excel.', 'error');
+    }
+    btn.innerHTML = originalHtml;
+    btn.disabled = !lastDashboardExport;
+}
+async function loadGroups() {
+    const listEl = document.getElementById('dashboard-groups-list');
+    const [groupsRes, agentsRes] = await Promise.all([
+        supabaseClient.from('agent_groups').select('*').order('name'),
+        supabaseClient.from('profiles').select('id, full_name, email, role, group_id').in('role', ['agente', 'admin']).order('full_name')
+    ]);
+    const error = groupsRes.error || agentsRes.error;
+    if (error) {
+        console.error('Error al cargar grupos:', error.message);
+        listEl.innerHTML = `<p class="text-sm text-red-500">${isMissingDashboardSchema(error) ? DASHBOARD_MISSING_SQL : 'No se pudieron cargar los grupos.'}</p>`;
+        return;
+    }
+    const agents = agentsRes.data;
+    const agentName = (a) => escapeHtml(a.full_name || a.email || a.id);
+    if (!groupsRes.data.length) {
+        listEl.innerHTML = '<p class="text-sm text-gray-500">Aún no hay grupos. Crea el primero arriba.</p>';
+        return;
+    }
+    listEl.innerHTML = groupsRes.data.map(group => {
+        const members = agents.filter(a => a.group_id === group.id);
+        const outsiders = agents.filter(a => a.group_id !== group.id);
+        return `
+            <div class="dash-group-card">
+                <div class="dash-group-head">
+                    <strong>${escapeHtml(group.name)}</strong>
+                    <button type="button" class="dash-link-danger" onclick="deleteGroup('${group.id}')">Eliminar grupo</button>
+                </div>
+                <label class="cp-label">Encargado</label>
+                <select class="cp-input" onchange="setGroupLeader('${group.id}', this.value)">
+                    <option value="">Sin encargado</option>
+                    ${agents.map(a => `<option value="${a.id}" ${a.id === group.leader_id ? 'selected' : ''}>${agentName(a)}${a.group_id === group.id ? '' : ' (se unirá al grupo)'}</option>`).join('')}
+                </select>
+                <label class="cp-label">Agentes del grupo (${members.length})</label>
+                <div class="dash-members">
+                    ${members.length ? members.map(a => `
+                        <span class="dash-member">
+                            ${agentName(a)}${a.id === group.leader_id ? ' <span class="dash-badge">Encargado</span>' : ''}
+                            <button type="button" title="Quitar del grupo" onclick="setAgentGroup('${a.id}', '')"><i class="fas fa-times"></i></button>
+                        </span>
+                    `).join('') : '<span class="dash-muted">Sin agentes asignados.</span>'}
+                </div>
+                <select class="cp-input dash-add-member" onchange="setAgentGroup(this.value, '${group.id}')" ${outsiders.length ? '' : 'disabled'}>
+                    <option value="">${outsiders.length ? 'Agregar agente…' : 'No hay más agentes disponibles'}</option>
+                    ${outsiders.map(a => `<option value="${a.id}">${agentName(a)}${a.group_id ? ' (se moverá de su grupo actual)' : ''}</option>`).join('')}
+                </select>
+            </div>
+        `;
+    }).join('');
+}
+async function submitCreateGroup(event) {
+    event.preventDefault();
+    const input = document.getElementById('new-group-name');
+    const name = input.value.trim();
+    if (!name) return;
+    const { error } = await supabaseClient.from('agent_groups').insert({ name });
+    if (error) {
+        console.error('Error al crear grupo:', error.message);
+        showToast(error.code === '23505' ? 'Ya existe un grupo con ese nombre.' : 'No se pudo crear el grupo.', 'error');
+        return;
+    }
+    input.value = '';
+    showToast('Grupo creado.', 'success');
+    loadDashboard();
+}
+async function setGroupLeader(groupId, leaderId) {
+    const { error } = await supabaseClient.rpc('set_group_leader', {
+        p_group_id: groupId,
+        p_leader_id: leaderId || null
+    });
+    if (error) {
+        console.error('Error al delegar encargado:', error.message);
+        showToast('No se pudo delegar el encargado.', 'error');
+    } else {
+        showToast(leaderId ? 'Encargado delegado.' : 'El grupo quedó sin encargado.', 'success');
+    }
+    loadDashboard();
+}
+async function setAgentGroup(agentId, groupId) {
+    if (!agentId) return;
+    const { error } = await supabaseClient
+        .from('profiles')
+        .update({ group_id: groupId || null })
+        .eq('id', agentId);
+    if (error) {
+        console.error('Error al asignar grupo:', error.message);
+        showToast('No se pudo actualizar el grupo del agente.', 'error');
+    } else {
+        showToast(groupId ? 'Agente agregado al grupo.' : 'Agente quitado del grupo.', 'success');
+    }
+    loadDashboard();
+}
+async function deleteGroup(groupId) {
+    if (!confirm('¿Eliminar este grupo? Sus agentes quedarán sin grupo.')) return;
+    const { error } = await supabaseClient.from('agent_groups').delete().eq('id', groupId);
+    if (error) {
+        console.error('Error al eliminar grupo:', error.message);
+        showToast('No se pudo eliminar el grupo.', 'error');
+        return;
+    }
+    showToast('Grupo eliminado.', 'success');
+    loadDashboard();
 }
 // =============================================
 // Ubicación en Vivo del Agente de Tráfico
@@ -500,21 +1003,43 @@ function startSharingLocation() {
         },
         { enableHighAccuracy: true, maximumAge: 0 }
     );
+    // Si el agente está quieto el GPS deja de avisar; reenviamos la última posición
+    // para que los demás no lo den por desconectado mientras sigue en el sistema.
+    locationHeartbeatId = setInterval(() => {
+        if (lastSharedPosition) sendAgentLocation(lastSharedPosition.lat, lastSharedPosition.lng);
+    }, AGENT_LOCATION_HEARTBEAT_MS);
 }
-function stopSharingLocation() {
+function stopLocationWatch() {
     isSharingLocation = false;
+    lastSharedPosition = null;
     document.getElementById('share-location-btn').classList.remove('active-mode');
     if (locationWatchId !== null) {
         navigator.geolocation.clearWatch(locationWatchId);
         locationWatchId = null;
     }
-    if (currentUser && supabaseClient) {
-        supabaseClient.from('agent_locations').delete().eq('user_id', currentUser.id);
+    if (locationHeartbeatId !== null) {
+        clearInterval(locationHeartbeatId);
+        locationHeartbeatId = null;
     }
-    removeAgentLocationMarker(currentUser ? currentUser.id : null);
+}
+async function deleteOwnAgentLocation() {
+    if (!currentUser || !supabaseClient) return;
+    const userId = currentUser.id;
+    removeAgentLocationMarker(userId);
+    // El await es necesario: sin él supabase-js nunca llega a enviar la petición
+    const { error } = await supabaseClient.from('agent_locations').delete().eq('user_id', userId);
+    if (error) {
+        console.error('Error al quitar la ubicación del agente:', error.message);
+    }
+}
+async function stopSharingLocation() {
+    stopLocationWatch();
+    await deleteOwnAgentLocation();
     showToast('Dejaste de compartir tu ubicación.', 'info');
 }
 async function sendAgentLocation(lat, lng) {
+    if (!isSharingLocation || !currentUser) return;
+    lastSharedPosition = { lat, lng };
     const now = Date.now();
     if (now - lastLocationSentAt < 8000) return; // enviar como máximo cada 8s
     lastLocationSentAt = now;
@@ -527,7 +1052,9 @@ async function sendAgentLocation(lat, lng) {
 }
 async function loadAgentLocations() {
     if (!supabaseClient) return;
-    const { data, error } = await supabaseClient.from('agent_locations').select('*');
+    // Solo agentes con señal reciente: una fila vieja es de alguien que ya no está en el sistema
+    const staleCutoff = new Date(Date.now() - AGENT_LOCATION_STALE_MS).toISOString();
+    const { data, error } = await supabaseClient.from('agent_locations').select('*').gt('updated_at', staleCutoff);
     if (error) {
         console.error('Error al cargar ubicaciones de agentes:', error.message);
         return;
@@ -678,7 +1205,7 @@ function showRouteOptions() {
         (best, cur, idx) => (cur.duration < routeAlternatives[best].duration ? idx : best),
         0
     );
-    const listEl = document.getElementById('route-options-list');
+    const listEl = document.getElementById('route-options');
     listEl.innerHTML = routeAlternatives.map((r, i) => `
         <div class="route-option-row" onclick="selectRouteOption(${i})">
             <div class="route-option-main">
@@ -721,10 +1248,44 @@ async function selectRouteOption(index) {
     showRouteSummary(route.distance, route.duration);
     // Mejora progresiva: si Google Maps está configurado, actualizamos con el
     // tiempo real de tráfico en vivo en cuanto llegue (puede tardar un poco más).
+    setRouteTraffic('loading');
+    const from = lastRouteFrom;
     const trafficInfo = await getGoogleTrafficDuration(lastRouteFrom, lastRouteTo);
-    if (trafficInfo && routeLine && selectedRouteIndex === index) {
-        showRouteSummary(route.distance, trafficInfo.durationInTrafficSeconds, trafficInfo.durationSeconds);
+    // Si mientras tanto se canceló o cambió la ruta, este resultado ya no aplica
+    if (!routeLine || isNavigating || selectedRouteIndex !== index || lastRouteFrom !== from) return;
+    if (trafficInfo) {
+        showRouteSummary(route.distance, trafficInfo.durationInTrafficSeconds);
+        setRouteTraffic('ready', trafficInfo);
+    } else {
+        setRouteTraffic('unavailable');
     }
+}
+// Fila "embotellamiento" del resumen de ruta: cuánto tiempo añade el tráfico entre A y B
+function setRouteTraffic(state, trafficInfo) {
+    const el = document.getElementById('route-traffic');
+    el.classList.remove('hidden');
+    if (state === 'loading') {
+        el.style.color = '#6b7280';
+        el.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando tráfico en vivo...';
+        return;
+    }
+    if (state === 'unavailable') {
+        el.style.color = '#6b7280';
+        el.innerHTML = '<i class="fas fa-circle-info"></i> Tráfico en vivo no disponible: el tiempo mostrado es sin tráfico.';
+        return;
+    }
+    const delaySeconds = trafficInfo.durationInTrafficSeconds - trafficInfo.durationSeconds;
+    const delayMinutes = Math.round(delaySeconds / 60);
+    const normalText = formatDurationText(trafficInfo.durationSeconds);
+    if (delayMinutes < 1) {
+        el.style.color = '#15803d';
+        el.innerHTML = `<i class="fas fa-circle-check"></i> Sin embotellamiento: tráfico fluido (${normalText} normalmente).`;
+        return;
+    }
+    // Retraso fuerte: 10 min o más, o la mitad del tiempo normal del trayecto
+    const isHeavy = delayMinutes >= 10 || delaySeconds >= trafficInfo.durationSeconds * 0.5;
+    el.style.color = isHeavy ? '#b91c1c' : '#b45309';
+    el.innerHTML = `<i class="fas fa-car-side"></i> Embotellamiento: +${formatDurationText(delayMinutes * 60)} de retraso por tráfico (sin tráfico: ${normalText}).`;
 }
 function loadGoogleMapsScript() {
     if (googleMapsLoadPromise) return googleMapsLoadPromise;
@@ -825,6 +1386,7 @@ function clearRoute() {
     lastRouteFrom = null;
     lastRouteTo = null;
     document.getElementById('route-summary').classList.add('hidden');
+    document.getElementById('route-traffic').classList.add('hidden');
     document.getElementById('route-options').classList.add('hidden');
     document.getElementById('route-actions').classList.add('hidden');
     document.getElementById('navigation-actions').classList.add('hidden');
@@ -858,6 +1420,8 @@ function startNavigation() {
     }
     document.getElementById('route-actions').classList.add('hidden');
     document.getElementById('navigation-actions').classList.remove('hidden');
+    // Durante la navegación el retraso por tráfico va junto al tiempo restante
+    document.getElementById('route-traffic').classList.add('hidden');
     document.getElementById('place-title').innerText = 'En camino...';
     showToast('Navegación iniciada. Te avisamos al llegar.', 'success');
     navigationWatchId = navigator.geolocation.watchPosition(
@@ -990,8 +1554,26 @@ function openControlPointForm(lat, lng) {
     document.getElementById('add-point-btn').classList.remove('active-mode');
     document.getElementById('control-point-coords').innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     document.getElementById('control-point-form').reset();
+    fillControlPointGroupSelect();
+    loadAgentGroups().then(fillControlPointGroupSelect);
     document.getElementById('control-point-backdrop').classList.add('active');
     document.getElementById('control-point-modal').classList.add('active');
+}
+// Solo agentes/admins delegan; se oculta si aún no hay grupos creados
+function fillControlPointGroupSelect() {
+    const field = document.getElementById('cp-group-field');
+    const select = document.getElementById('cp-group');
+    const groups = Object.entries(agentGroupsById);
+    if (!['agente', 'admin'].includes(currentUserRole) || !groups.length) {
+        field.classList.add('hidden');
+        select.value = '';
+        return;
+    }
+    const selected = select.value;
+    select.innerHTML = '<option value="">Sin asignar</option>'
+        + groups.map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`).join('');
+    select.value = agentGroupsById[selected] ? selected : '';
+    field.classList.remove('hidden');
 }
 function closeControlPointForm() {
     pendingLatLng = null;
@@ -1024,6 +1606,8 @@ async function submitControlPoint(event) {
         reported_by: currentUser.id,
         expires_at: new Date(Date.now() + expirationHours * 3600 * 1000).toISOString()
     };
+    const assignedGroupId = document.getElementById('cp-group').value;
+    if (assignedGroupId) newPoint.assigned_group_id = assignedGroupId;
     const { data, error } = await supabaseClient
         .from('control_points')
         .insert(newPoint)
@@ -1037,7 +1621,9 @@ async function submitControlPoint(event) {
         return;
     }
     renderControlPointMarker(data);
-    showToast('Punto de control registrado.', 'success');
+    showToast(data.assigned_group_id
+        ? `Punto registrado y delegado a ${agentGroupsById[data.assigned_group_id] || 'el grupo'}.`
+        : 'Punto de control registrado.', 'success');
     closeControlPointForm();
 }
 // =============================================
@@ -1318,24 +1904,32 @@ window.submitControlPoint = submitControlPoint;
 window.submitControlPointForm = submitControlPoint;
 window.confirmControlPoint = confirmControlPoint;
 window.resolveControlPoint = resolveControlPoint;
+window.startControlPointAttention = startControlPointAttention;
 window.calculateRouteToSelected = routeToSearchedPlace; // alias from HTML
 window.cancelRoute = cancelRoute;
 window.startNavigation = startNavigation;
 window.stopNavigation = stopNavigation;
 window.routeToSearchedPlace = routeToSearchedPlace;
 window.closePanel = closePanel;
+window.updateUserRole = updateUserRole;
+window.selectRouteOption = selectRouteOption;
+window.focusHistoryPoint = focusHistoryPoint;
+window.openDashboard = openDashboard;
+window.closeDashboard = closeDashboard;
+window.loadDashboard = loadDashboard;
+window.exportDashboardExcel = exportDashboardExcel;
+window.submitCreateGroup = submitCreateGroup;
+window.setGroupLeader = setGroupLeader;
+window.setAgentGroup = setAgentGroup;
+window.deleteGroup = deleteGroup;
 
 async function startAppInitialization() {
     const sUrl = window.SUPABASE_URL || (typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '');
     const sKey = window.SUPABASE_ANON_KEY || (typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '');
 
-    if (!sUrl || sUrl.includes('TU-PROYECTO')) {
-        console.warn('Supabase no está configurado. Edita js/config.js con tus credenciales.');
-        const errEl = document.getElementById('gate-error');
-        if (errEl) {
-            errEl.innerText = 'La app no está configurada correctamente. Contacta al administrador.';
-            errEl.classList.remove('hidden');
-        }
+    if (!sUrl || !sKey || sUrl.includes('TU-PROYECTO')) {
+        console.error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el archivo .env (o en las variables de entorno de Vercel).');
+        showToast('La app no está configurada correctamente. Contacta al administrador.');
         return;
     }
     supabaseClient = window.supabase.createClient(sUrl, sKey);
@@ -1349,10 +1943,29 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
     window.addEventListener('DOMContentLoaded', () => setTimeout(startAppInitialization, 100));
 }
 
-window.addEventListener('beforeunload', function () {
-    if (isSharingLocation && currentUser && supabaseClient) {
-        supabaseClient.from('agent_locations').delete().eq('user_id', currentUser.id);
-    }
+// Al cerrar la pestaña o salir de la página: quitar el punto del agente.
+// fetch con keepalive es lo único que el navegador garantiza enviar mientras la página se cierra.
+window.addEventListener('pagehide', function () {
+    if (!currentUser || !currentAccessToken) return;
+    fetch(`${window.SUPABASE_URL}/rest/v1/rpc/set_presence`, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+            apikey: window.SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${currentAccessToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ p_online: false })
+    }).catch(() => {});
+    if (!isSharingLocation) return;
+    fetch(`${window.SUPABASE_URL}/rest/v1/agent_locations?user_id=eq.${currentUser.id}`, {
+        method: 'DELETE',
+        keepalive: true,
+        headers: {
+            apikey: window.SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${currentAccessToken}`
+        }
+    }).catch(() => {});
 });
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

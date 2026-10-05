@@ -17,3 +17,12 @@ Thumbs.db
 
 # Editor
 .vscode/
+
+# Herramientas temporales / caché
+.lighthouse_tmp/
+.chrome_profile/
+.kilo/
+
+# Reportes de Lighthouse
+lighthouse-report.report.html
+lighthouse-report.report.json
