@@ -1481,3 +1481,20 @@ body {
     line-height: 1.35;
     color: #6b7280;
 }
+
+/* --- Reintentar la consulta de tráfico de una ruta --- */
+.route-traffic-retry {
+    margin-left: 6px;
+    padding: 2px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 999px;
+    background: white;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.route-traffic-retry:hover {
+    background: #f3f4f6;
+}

@@ -1246,13 +1246,27 @@ async function selectRouteOption(index) {
     routeLine = L.polyline(route.latlngs, { color: '#2563eb', weight: 5, opacity: 0.85 }).addTo(map);
     map.fitBounds(routeLine.getBounds(), { padding: [60, 60] });
     showRouteSummary(route.distance, route.duration);
-    // Mejora progresiva: si Google Maps está configurado, actualizamos con el
-    // tiempo real de tráfico en vivo en cuanto llegue (puede tardar un poco más).
-    setRouteTraffic('loading');
+    await loadRouteTraffic();
+}
+// Mejora progresiva: si Google Maps está configurado, actualizamos el resumen con el
+// tiempo real de tráfico en vivo en cuanto llegue (puede tardar un poco más).
+async function loadRouteTraffic() {
+    const route = routeAlternatives[selectedRouteIndex];
+    if (!route || !routeLine || isNavigating) return;
+    const index = selectedRouteIndex;
     const from = lastRouteFrom;
-    const trafficInfo = await getGoogleTrafficDuration(lastRouteFrom, lastRouteTo);
-    // Si mientras tanto se canceló o cambió la ruta, este resultado ya no aplica
-    if (!routeLine || isNavigating || selectedRouteIndex !== index || lastRouteFrom !== from) return;
+    // Si mientras tanto se canceló o cambió la ruta, el resultado ya no aplica
+    const isStale = () => !routeLine || isNavigating || selectedRouteIndex !== index || lastRouteFrom !== from;
+    setRouteTraffic('loading');
+    let trafficInfo = await getGoogleTrafficDuration(lastRouteFrom, lastRouteTo);
+    if (isStale()) return;
+    // Un fallo suele ser pasajero (señal débil): un segundo intento antes de darlo por no disponible
+    if (!trafficInfo && isGoogleMapsConfigured()) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (isStale()) return;
+        trafficInfo = await getGoogleTrafficDuration(lastRouteFrom, lastRouteTo);
+        if (isStale()) return;
+    }
     if (trafficInfo) {
         showRouteSummary(route.distance, trafficInfo.durationInTrafficSeconds);
         setRouteTraffic('ready', trafficInfo);
@@ -1271,7 +1285,9 @@ function setRouteTraffic(state, trafficInfo) {
     }
     if (state === 'unavailable') {
         el.style.color = '#6b7280';
-        el.innerHTML = '<i class="fas fa-circle-info"></i> Tráfico en vivo no disponible: el tiempo mostrado es sin tráfico.';
+        el.innerHTML = isGoogleMapsConfigured()
+            ? '<i class="fas fa-circle-info"></i> Tráfico en vivo no disponible: el tiempo mostrado es sin tráfico. <button type="button" class="route-traffic-retry" onclick="loadRouteTraffic()">Reintentar</button>'
+            : '<i class="fas fa-circle-info"></i> Tráfico en vivo no configurado: el tiempo mostrado es sin tráfico.';
         return;
     }
     const delaySeconds = trafficInfo.durationInTrafficSeconds - trafficInfo.durationSeconds;
@@ -1287,18 +1303,25 @@ function setRouteTraffic(state, trafficInfo) {
     el.style.color = isHeavy ? '#b91c1c' : '#b45309';
     el.innerHTML = `<i class="fas fa-car-side"></i> Embotellamiento: +${formatDurationText(delayMinutes * 60)} de retraso por tráfico (sin tráfico: ${normalText}).`;
 }
+function isGoogleMapsConfigured() {
+    return typeof GOOGLE_MAPS_API_KEY !== 'undefined' && !!GOOGLE_MAPS_API_KEY && !GOOGLE_MAPS_API_KEY.includes('TU-');
+}
 function loadGoogleMapsScript() {
     if (googleMapsLoadPromise) return googleMapsLoadPromise;
-    if (typeof GOOGLE_MAPS_API_KEY === 'undefined' || !GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes('TU-')) {
-        googleMapsLoadPromise = Promise.reject(new Error('Google Maps no está configurado.'));
-        return googleMapsLoadPromise;
+    if (!isGoogleMapsConfigured()) {
+        return Promise.reject(new Error('Google Maps no está configurado.'));
     }
     googleMapsLoadPromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
         script.async = true;
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error('No se pudo cargar Google Maps.'));
+        script.onerror = () => {
+            // Sin esto el fallo quedaba guardado y ya no se volvía a intentar hasta recargar la página
+            googleMapsLoadPromise = null;
+            script.remove();
+            reject(new Error('No se pudo cargar Google Maps.'));
+        };
         document.head.appendChild(script);
     });
     return googleMapsLoadPromise;
@@ -1913,6 +1936,7 @@ window.routeToSearchedPlace = routeToSearchedPlace;
 window.closePanel = closePanel;
 window.updateUserRole = updateUserRole;
 window.selectRouteOption = selectRouteOption;
+window.loadRouteTraffic = loadRouteTraffic;
 window.focusHistoryPoint = focusHistoryPoint;
 window.openDashboard = openDashboard;
 window.closeDashboard = closeDashboard;
