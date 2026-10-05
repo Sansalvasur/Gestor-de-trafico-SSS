@@ -122,22 +122,22 @@
 
             <div class="layers-divider"></div>
 
-            <div class="layer-toggle-row">
-                <div class="layer-toggle-info">
+            <div class="overlay-option">
+                <div class="overlay-info">
                     <i class="fas fa-car text-amber-500"></i>
                     <div>
                         <span class="layer-toggle-title">Tráfico en tiempo real</span>
                         <span class="layer-toggle-desc">Capa oficial de tráfico Google Maps</span>
                     </div>
                 </div>
-                <label class="switch">
+                <label class="toggle-switch">
                     <input type="checkbox" id="traffic-toggle" onchange="toggleTrafficLayer(this.checked)">
-                    <span class="slider round"></span>
+                    <span class="toggle-slider"></span>
                 </label>
             </div>
 
-            <div class="layer-toggle-row">
-                <div class="layer-toggle-info">
+            <div class="overlay-option">
+                <div class="overlay-info">
                     <i class="fas fa-draw-polygon text-blue-500"></i>
                     <div>
                         <span class="layer-toggle-title">Límite territorial San Salvador Sur</span>
@@ -145,9 +145,9 @@
                             Rosario de Mora</span>
                     </div>
                 </div>
-                <label class="switch">
+                <label class="toggle-switch">
                     <input type="checkbox" id="boundary-toggle" checked onchange="toggleBoundaryLayer(this.checked)">
-                    <span class="slider round"></span>
+                    <span class="toggle-slider"></span>
                 </label>
             </div>
         </div>
@@ -273,13 +273,13 @@
 
             <form id="create-user-form" onsubmit="submitCreateUser(event)">
                 <label class="cp-label">Nombre</label>
-                <input type="text" id="new-user-name" class="cp-input" required>
+                <input type="text" id="new-user-name" class="cp-input" autocomplete="off" required>
 
                 <label class="cp-label">Correo</label>
-                <input type="email" id="new-user-email" class="cp-input" required>
+                <input type="email" id="new-user-email" class="cp-input" autocomplete="off" required>
 
                 <label class="cp-label">Contraseña temporal</label>
-                <input type="password" id="new-user-password" class="cp-input" minlength="6" required>
+                <input type="password" id="new-user-password" class="cp-input" minlength="6" autocomplete="new-password" required>
 
                 <label class="cp-label">Rol</label>
                 <select id="new-user-role" class="cp-input">
