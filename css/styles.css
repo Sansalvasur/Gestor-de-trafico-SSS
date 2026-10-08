@@ -1498,3 +1498,21 @@ body {
 .route-traffic-retry:hover {
     background: #f3f4f6;
 }
+
+/* --- Modal de simbología --- */
+.legend-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 14px;
+}
+
+.legend-row small {
+    color: #6b7280;
+}
+
+.legend-row .control-point-icon {
+    flex-shrink: 0;
+}

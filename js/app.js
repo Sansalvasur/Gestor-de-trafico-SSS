@@ -31,6 +31,14 @@ const CONTROL_POINT_TYPES = {
     semaforo_danado: { label: 'Semáforo dañado', icon: 'fa-traffic-light', color: '#7c3aed' },
     otro: { label: 'Otro', icon: 'fa-circle-exclamation', color: '#6b7280' }
 };
+const CONTROL_POINT_DESCRIPTIONS = {
+    reten: 'Control o puesto de revisión de la policía en la vía.',
+    accidente: 'Choque o percance vial que puede bloquear el paso.',
+    congestion: 'Tráfico lento o detenido por exceso de vehículos.',
+    obra_vial: 'Trabajos en la calle: carril cerrado o paso reducido.',
+    semaforo_danado: 'Semáforo apagado o que no funciona bien: cruza con precaución.',
+    otro: 'Otro incidente que afecta la circulación.'
+};
 const EXPIRATION_HOURS = {
     reten: 6,
     accidente: 4,
@@ -501,6 +509,23 @@ function getControlPointIcon(type, inProgress) {
         iconAnchor: [15, 30],
         popupAnchor: [0, -30]
     });
+}
+function openLegendPanel() {
+    const row = (color, icon, title, text) => `
+        <div class="legend-row">
+            <div class="control-point-icon" style="background-color:${color};"><i class="fas ${icon}"></i></div>
+            <div><b>${title}</b><br><small>${text}</small></div>
+        </div>`;
+    document.getElementById('legend-list').innerHTML =
+        Object.entries(CONTROL_POINT_TYPES).map(([key, meta]) =>
+            row(meta.color, meta.icon, meta.label, CONTROL_POINT_DESCRIPTIONS[key])).join('')
+        + row(IN_PROGRESS_COLOR, 'fa-location-dot', 'En proceso', 'Cualquier símbolo en verde: un agente ya está en el lugar atendiendo el punto.');
+    document.getElementById('legend-backdrop').classList.add('active');
+    document.getElementById('legend-modal').classList.add('active');
+}
+function closeLegendPanel() {
+    document.getElementById('legend-backdrop').classList.remove('active');
+    document.getElementById('legend-modal').classList.remove('active');
 }
 function renderControlPointMarker(point) {
     controlPointsData[point.id] = point;
@@ -1964,6 +1989,8 @@ window.openAdminPanel = openAdminPanel;
 window.closeAdminPanel = closeAdminPanel;
 window.submitCreateUser = submitCreateUser;
 window.updateUserDistrict = updateUserDistrict;
+window.openLegendPanel = openLegendPanel;
+window.closeLegendPanel = closeLegendPanel;
 window.openControlPointForm = openControlPointForm;
 window.closeControlPointForm = closeControlPointForm;
 window.submitControlPoint = submitControlPoint;
