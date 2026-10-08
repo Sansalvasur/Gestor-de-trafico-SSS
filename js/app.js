@@ -20,6 +20,7 @@ let agentGroupsById = {};
 let currentUserGroupId = null;
 const IN_PROGRESS_COLOR = '#16a34a';
 const CONTROL_POINTS_REFRESH_MS = 30000;
+const DISTRICTS = ['Panchimalco', 'Rosario de Mora', 'San Marcos', 'Santiago Texacuangos', 'Santo Tomás'];
 let controlPointsCluster;
 let viewportLoadTimeout;
 const CONTROL_POINT_TYPES = {
@@ -377,10 +378,11 @@ async function submitCreateUser(event) {
         btn.innerText = 'Crear usuario';
         return;
     }
-    if (role !== 'ciudadano' && data.user) {
+    const district = document.getElementById('new-user-district').value || null;
+    if ((role !== 'ciudadano' || district) && data.user) {
         const { error: roleError } = await supabaseClient
             .from('profiles')
-            .update({ role })
+            .update({ role, district })
             .eq('id', data.user.id);
         if (roleError) {
             console.error('Error al asignar rol:', roleError.message);
@@ -410,6 +412,10 @@ async function loadUserList() {
             <span class="user-row-email" title="${user.full_name || user.email || user.id}">
                 ${user.full_name ? `<b>${user.full_name}</b><br><small>${user.email}</small>` : (user.email || user.id)}
             </span>
+            <select class="user-row-role-select" title="Distrito" onchange="updateUserDistrict('${user.id}', this.value)">
+                <option value="">Sin distrito</option>
+                ${DISTRICTS.map(d => `<option value="${d}" ${user.district === d ? 'selected' : ''}>${d}</option>`).join('')}
+            </select>
             <select class="user-row-role-select" onchange="updateUserRole('${user.id}', this.value)">
                 <option value="ciudadano" ${user.role === 'ciudadano' ? 'selected' : ''}>Ciudadano</option>
                 <option value="agente" ${user.role === 'agente' ? 'selected' : ''}>Agente</option>
@@ -417,6 +423,18 @@ async function loadUserList() {
             </select>
         </div>
     `).join('');
+}
+async function updateUserDistrict(userId, district) {
+    const { error } = await supabaseClient
+        .from('profiles')
+        .update({ district: district || null })
+        .eq('id', userId);
+    if (error) {
+        console.error('Error al actualizar distrito:', error.message);
+        showToast('No se pudo actualizar el distrito.', 'error');
+        return;
+    }
+    showToast('Distrito actualizado.', 'success');
 }
 async function updateUserRole(userId, newRole) {
     const { error } = await supabaseClient
@@ -527,7 +545,7 @@ function buildControlPointPopupHtml(point) {
     return `
         <div style="font-family:'Inter',sans-serif; min-width:190px;">
             <strong>${meta.label}</strong><br>
-            <span style="font-size:12px; color:#6b7280;">Severidad: ${severityLabel}</span>
+            <span style="font-size:12px; color:#6b7280;">Severidad: ${severityLabel}${point.district ? ` · ${escapeHtml(point.district)}` : ''}</span>
             ${point.description ? `<p style="margin:6px 0 0 0; font-size:13px;">${escapeHtml(point.description)}</p>` : ''}
             <p class="cp-popup-meta"><i class="fas fa-people-group"></i> ${groupName ? `Asignado a: <b>${escapeHtml(groupName)}</b>` : 'Sin grupo asignado'}</p>
             ${inProgress
@@ -737,6 +755,12 @@ async function loadDashboard() {
         contentEl.innerHTML = `<p class="text-sm text-red-500">${isMissingDashboardSchema(error) ? DASHBOARD_MISSING_SQL : 'No se pudieron cargar las estadísticas.'}</p>`;
         return;
     }
+    // Opcional: si aún no se ejecutó schema_districts.sql, el dashboard sigue funcionando sin esta sección
+    const { data: byDistrict } = await supabaseClient.rpc('attention_by_district', {
+        from_date: from.toISOString(),
+        to_date: to.toISOString()
+    });
+    data.by_district = byDistrict || [];
     contentEl.innerHTML = buildDashboardHtml(data);
     lastDashboardExport = { stats: data, fromDate, toDate };
     document.getElementById('dashboard-export-btn').disabled = false;
@@ -772,6 +796,9 @@ function buildDashboardHtml(stats) {
         <div class="dash-tiles">${tilesHtml}</div>
         <h4 class="dash-section-title">Reportes por tipo</h4>
         ${buildTypeBarsHtml(stats.by_type)}
+        ${stats.by_district && stats.by_district.length ? `
+        <h4 class="dash-section-title">Reportes por distrito</h4>
+        ${buildDistrictBarsHtml(stats.by_district)}` : ''}
         <h4 class="dash-section-title">Recibidos y atendidos por día</h4>
         ${buildDailyChartHtml(stats.by_day)}
         <h4 class="dash-section-title">Atención por agente</h4>
@@ -789,6 +816,20 @@ function buildTypeBarsHtml(byType) {
         return `
             <div class="dash-bar-row" title="${meta.label}: ${detail}">
                 <span class="dash-bar-label">${meta.label}</span>
+                <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${(row.reported / max) * 100}%"></div></div>
+                <span class="dash-bar-value">${row.reported}</span>
+                <span class="dash-bar-detail">${detail}</span>
+            </div>
+        `;
+    }).join('')}</div>`;
+}
+function buildDistrictBarsHtml(byDistrict) {
+    const max = Math.max(...byDistrict.map(r => r.reported));
+    return `<div class="dash-bars">${byDistrict.map(row => {
+        const detail = `${row.resolved} de ${row.reported} atendidos`;
+        return `
+            <div class="dash-bar-row" title="${escapeHtml(row.district)}: ${detail}">
+                <span class="dash-bar-label">${escapeHtml(row.district)}</span>
                 <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${(row.reported / max) * 100}%"></div></div>
                 <span class="dash-bar-value">${row.reported}</span>
                 <span class="dash-bar-detail">${detail}</span>
@@ -1621,6 +1662,7 @@ async function submitControlPoint(event) {
     const type = document.getElementById('cp-type').value;
     const expirationHours = EXPIRATION_HOURS[type] || 4;
     const newPoint = {
+        district: document.getElementById('cp-district').value,
         lat: pendingLatLng.lat,
         lng: pendingLatLng.lng,
         type: type,
@@ -1921,6 +1963,7 @@ window.toggleShareLocation = toggleShareLocation;
 window.openAdminPanel = openAdminPanel;
 window.closeAdminPanel = closeAdminPanel;
 window.submitCreateUser = submitCreateUser;
+window.updateUserDistrict = updateUserDistrict;
 window.openControlPointForm = openControlPointForm;
 window.closeControlPointForm = closeControlPointForm;
 window.submitControlPoint = submitControlPoint;

@@ -233,6 +233,16 @@
                     <option value="alta">Alta</option>
                 </select>
 
+                <label class="cp-label">Distrito</label>
+                <select id="cp-district" class="cp-input" required>
+                    <option value="">Selecciona el distrito</option>
+                    <option value="Panchimalco">Panchimalco</option>
+                    <option value="Rosario de Mora">Rosario de Mora</option>
+                    <option value="San Marcos">San Marcos</option>
+                    <option value="Santiago Texacuangos">Santiago Texacuangos</option>
+                    <option value="Santo Tomás">Santo Tomás</option>
+                </select>
+
                 <div id="cp-group-field" class="hidden">
                     <label class="cp-label">Grupo que lo resolverá</label>
                     <select id="cp-group" class="cp-input">
@@ -282,10 +292,20 @@
                 <input type="password" id="new-user-password" class="cp-input" minlength="6" autocomplete="new-password" required>
 
                 <label class="cp-label">Rol</label>
-                <select id="new-user-role" class="cp-input">
+                <select id="new-user-role" class="cp-input" onchange="document.getElementById('new-user-district').required = this.value === 'agente'">
                     <option value="ciudadano">Ciudadano</option>
                     <option value="agente">Agente</option>
                     <option value="admin">Admin</option>
+                </select>
+
+                <label class="cp-label">Distrito (obligatorio para agentes)</label>
+                <select id="new-user-district" class="cp-input">
+                    <option value="">Sin distrito</option>
+                    <option value="Panchimalco">Panchimalco</option>
+                    <option value="Rosario de Mora">Rosario de Mora</option>
+                    <option value="San Marcos">San Marcos</option>
+                    <option value="Santiago Texacuangos">Santiago Texacuangos</option>
+                    <option value="Santo Tomás">Santo Tomás</option>
                 </select>
 
                 <div class="cp-actions">

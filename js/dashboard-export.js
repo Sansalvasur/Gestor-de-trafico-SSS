@@ -226,6 +226,21 @@ export async function buildDashboardWorkbook(stats, meta) {
         { header: 'Tiempo prom. (min)', key: 'avg', width: 19 }
     ], typeRows);
 
+    // --- Por distrito ---
+    if (stats.by_district && stats.by_district.length) {
+        addTableSheet(workbook, 'Por distrito', [
+            { header: 'Distrito', key: 'district', width: 24 },
+            { header: 'Recibidos', key: 'reported', width: 12 },
+            { header: 'Atendidos', key: 'resolved', width: 12 },
+            { header: '% atendidos', key: 'pct', width: 13, numFmt: '0%' }
+        ], stats.by_district.map(d => ({
+            district: d.district,
+            reported: d.reported,
+            resolved: d.resolved,
+            pct: percent(d.resolved, d.reported)
+        })));
+    }
+
     // --- Por día ---
     const daySheet = addTableSheet(workbook, 'Por día', [
         { header: 'Fecha', key: 'date', width: 14, numFmt: 'dd/mm/yyyy' },
