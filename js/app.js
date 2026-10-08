@@ -698,11 +698,12 @@ async function loadHistory() {
         listEl.innerHTML = '<p class="text-sm text-gray-500">Sin puntos resueltos en esta área y rango de fechas.</p>';
         return;
     }
+    historyPointsById = Object.fromEntries(data.map(p => [p.id, p]));
     listEl.innerHTML = data.map(point => {
         const meta = CONTROL_POINT_TYPES[point.type] || CONTROL_POINT_TYPES.otro;
         const resolvedDate = point.resolved_at ? new Date(point.resolved_at).toLocaleString('es-SV') : '-';
         return `
-            <div class="user-row" style="cursor:pointer; align-items:flex-start;" onclick="focusHistoryPoint(${point.lat}, ${point.lng})">
+            <div class="user-row" style="cursor:pointer; align-items:flex-start;" onclick="focusHistoryPoint('${point.id}')">
                 <div style="flex:1;">
                     <strong style="font-size:13px;">${meta.label}</strong><br>
                     <span style="font-size:11px; color:#6b7280;">Resuelto: ${resolvedDate}</span>
@@ -714,9 +715,25 @@ async function loadHistory() {
         `;
     }).join('');
 }
-function focusHistoryPoint(lat, lng) {
+// Los puntos resueltos no están en el mapa: se muestra uno temporal para ubicarlo
+let historyPointsById = {};
+let historyHighlightMarker = null;
+function focusHistoryPoint(pointId) {
+    const point = historyPointsById[pointId];
+    if (!point) return;
     closeHistoryPanel();
-    map.flyTo([lat, lng], 17);
+    if (historyHighlightMarker) map.removeLayer(historyHighlightMarker);
+    const meta = CONTROL_POINT_TYPES[point.type] || CONTROL_POINT_TYPES.otro;
+    const district = point.district ? ` · ${escapeHtml(point.district)}` : '';
+    historyHighlightMarker = L.marker([point.lat, point.lng], { icon: getControlPointIcon(point.type, false), opacity: 0.85 })
+        .addTo(map)
+        .bindPopup(`<div style="font-family:'Inter',sans-serif;"><strong>${meta.label}</strong> (resuelto)<br><span style="font-size:12px; color:#6b7280;">${point.resolved_at ? new Date(point.resolved_at).toLocaleString('es-SV') : ''}${district}</span></div>`);
+    map.flyTo([point.lat, point.lng], 17);
+    map.once('moveend', () => historyHighlightMarker && historyHighlightMarker.openPopup());
+    historyHighlightMarker.on('popupclose', () => {
+        if (historyHighlightMarker) map.removeLayer(historyHighlightMarker);
+        historyHighlightMarker = null;
+    });
 }
 // =============================================
 // Dashboard de Atención a Reportes + Grupos de Agentes
