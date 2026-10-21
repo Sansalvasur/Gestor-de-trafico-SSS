@@ -437,6 +437,13 @@
                     </span>
                 </div>
 
+                <div id="push-field" class="hidden py-2">
+                    <button type="button" id="push-btn" class="cp-btn cp-btn-secondary w-full" onclick="togglePushNotifications()">
+                        <i class="fas fa-bell mr-1"></i> <span id="push-btn-label">Activar notificaciones</span>
+                    </button>
+                    <p id="push-hint" class="text-xs text-gray-500 mt-1">Recibe un aviso cuando se asigne un punto de control a tu grupo.</p>
+                </div>
+
                 <div class="pt-4 flex gap-2">
                     <button type="button" class="cp-btn cp-btn-secondary flex-1" onclick="closeAuthModal()">
                         Cerrar

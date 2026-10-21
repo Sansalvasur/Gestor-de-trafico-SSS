@@ -216,6 +216,7 @@ function openAuthModal() {
     const nameEl = document.getElementById('user-profile-name');
     if (nameEl) nameEl.innerText = name;
 
+    updatePushUI();
     backdrop.classList.add('active');
     modal.classList.add('active');
 }
@@ -235,6 +236,93 @@ async function logoutUser() {
     }
     window.location.replace('/');
 }
+// =============================================
+// Notificaciones push (agentes/admins; requiere supabase/schema_push_notifications.sql)
+// =============================================
+function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!window.VAPID_PUBLIC_KEY;
+}
+function urlBase64ToUint8Array(base64) {
+    const padded = (base64 + '='.repeat((4 - base64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+    return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
+}
+async function getPushSubscription() {
+    const registration = await navigator.serviceWorker.ready;
+    return registration.pushManager.getSubscription();
+}
+async function savePushSubscription(subscription) {
+    const json = subscription.toJSON();
+    const { error } = await supabaseClient.rpc('save_push_subscription', {
+        p_endpoint: json.endpoint,
+        p_p256dh: json.keys.p256dh,
+        p_auth: json.keys.auth
+    });
+    if (error) throw error;
+}
+async function updatePushUI() {
+    const field = document.getElementById('push-field');
+    if (!field) return;
+    if (!currentUser || !['agente', 'admin'].includes(currentUserRole) || !pushSupported()) {
+        field.classList.add('hidden');
+        return;
+    }
+    field.classList.remove('hidden');
+    const label = document.getElementById('push-btn-label');
+    const hint = document.getElementById('push-hint');
+    if (Notification.permission === 'denied') {
+        label.innerText = 'Notificaciones bloqueadas';
+        hint.innerText = 'Actívalas desde los permisos del navegador para este sitio.';
+        document.getElementById('push-btn').disabled = true;
+        return;
+    }
+    const subscribed = !!(await getPushSubscription());
+    document.getElementById('push-btn').disabled = false;
+    label.innerText = subscribed ? 'Desactivar notificaciones' : 'Activar notificaciones';
+    hint.innerText = subscribed
+        ? 'Recibirás un aviso cuando se asigne un punto de control a tu grupo.'
+        : 'Recibe un aviso cuando se asigne un punto de control a tu grupo.';
+}
+async function togglePushNotifications() {
+    try {
+        const existing = await getPushSubscription();
+        if (existing) {
+            await supabaseClient.rpc('remove_push_subscription', { p_endpoint: existing.endpoint });
+            await existing.unsubscribe();
+            showToast('Notificaciones desactivadas.', 'info');
+        } else {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                showToast('No se dio permiso para las notificaciones.', 'error');
+                updatePushUI();
+                return;
+            }
+            const registration = await navigator.serviceWorker.ready;
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(window.VAPID_PUBLIC_KEY)
+            });
+            await savePushSubscription(subscription);
+            showToast('Notificaciones activadas en este dispositivo.', 'success');
+        }
+    } catch (error) {
+        console.error('Error con las notificaciones:', error.message || error);
+        showToast(error.code === 'PGRST202'
+            ? 'Falta ejecutar supabase/schema_push_notifications.sql en Supabase.'
+            : 'No se pudieron configurar las notificaciones.', 'error');
+    }
+    updatePushUI();
+}
+// Si ya dio permiso, mantiene la suscripción de este dispositivo ligada al usuario actual
+async function syncPushSubscription() {
+    if (!currentUser || !['agente', 'admin'].includes(currentUserRole) || !pushSupported()) return;
+    if (Notification.permission !== 'granted') return;
+    try {
+        const subscription = await getPushSubscription();
+        if (subscription) await savePushSubscription(subscription);
+    } catch (error) {
+        console.warn('No se pudo sincronizar la suscripción push:', error.message || error);
+    }
+}
 async function fetchUserProfile() {
     const { data, error } = await supabaseClient
         .from('profiles')
@@ -243,6 +331,7 @@ async function fetchUserProfile() {
         .single();
     currentUserRole = (!error && data) ? data.role : 'ciudadano';
     currentUserGroupId = (!error && data) ? data.group_id : null;
+    syncPushSubscription();
 }
 async function loadAgentGroups() {
     const { data, error } = await supabaseClient.from('agent_groups').select('id, name').order('name');
@@ -1728,6 +1817,12 @@ async function submitControlPoint(event) {
         return;
     }
     renderControlPointMarker(data);
+    if (data.assigned_group_id) {
+        // No bloquea el registro: si falla, el punto igual queda guardado
+        supabaseClient.functions.invoke('notify-control-point', { body: { point_id: data.id } })
+            .then(({ error: notifyError }) => { if (notifyError) console.warn('No se pudo avisar al grupo:', notifyError.message); })
+            .catch((err) => console.warn('No se pudo avisar al grupo:', err.message));
+    }
     showToast(data.assigned_group_id
         ? `Punto registrado y delegado a ${agentGroupsById[data.assigned_group_id] || 'el grupo'}.`
         : 'Punto de control registrado.', 'success');
@@ -2006,6 +2101,7 @@ window.openAdminPanel = openAdminPanel;
 window.closeAdminPanel = closeAdminPanel;
 window.submitCreateUser = submitCreateUser;
 window.updateUserDistrict = updateUserDistrict;
+window.togglePushNotifications = togglePushNotifications;
 window.openLegendPanel = openLegendPanel;
 window.closeLegendPanel = closeLegendPanel;
 window.openControlPointForm = openControlPointForm;
