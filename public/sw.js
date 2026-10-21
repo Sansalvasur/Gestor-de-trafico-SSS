@@ -1,4 +1,6 @@
 /* Public copy of service worker for production builds served from root */
+// Cambia en cada compilación (lo reemplaza vite.config.js): así el navegador detecta la versión nueva
+const BUILD_ID = '__BUILD_ID__';
 const CACHE_NAME = 'trafico-app-shell-v2';
 
 // Solo rutas que existen tal cual en el build (los JS/CSS llevan hash en el
@@ -20,7 +22,6 @@ self.addEventListener('install', (event) => {
       .then((cache) => Promise.all(
         APP_SHELL.map((url) => cache.add(url).catch((err) => console.warn('SW: no se pudo cachear', url, err)))
       ))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -83,4 +84,9 @@ self.addEventListener('notificationclick', (event) => {
       return self.clients.openWindow(target);
     })
   );
+});
+
+// La página pide activar la versión nueva cuando el usuario acepta el aviso de actualización
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });

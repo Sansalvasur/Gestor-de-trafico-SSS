@@ -94,3 +94,8 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// La página pide activar la versión nueva cuando el usuario acepta el aviso de actualización
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
