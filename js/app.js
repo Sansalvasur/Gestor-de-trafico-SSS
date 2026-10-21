@@ -632,7 +632,8 @@ function refreshControlPointMarker(point) {
     if (!marker || !previous) return;
     const changed = previous.attention_started_at !== point.attention_started_at
         || previous.assigned_group_id !== point.assigned_group_id
-        || previous.confirmations_count !== point.confirmations_count;
+        || previous.confirmations_count !== point.confirmations_count
+        || previous.arrival_photo_path !== point.arrival_photo_path;
     if (!changed) return;
     marker.setIcon(getControlPointIcon(point.type, !!point.attention_started_at));
     if (marker.isPopupOpen()) marker.getPopup().update();
@@ -662,6 +663,7 @@ function buildControlPointPopupHtml(point) {
             <span style="font-size:12px; color:#6b7280;">Severidad: ${severityLabel}${point.district ? ` · ${escapeHtml(point.district)}` : ''}</span>
             ${point.description ? `<p style="margin:6px 0 0 0; font-size:13px;">${escapeHtml(point.description)}</p>` : ''}
             <p class="cp-popup-meta"><i class="fas fa-people-group"></i> ${groupName ? `Asignado a: <b>${escapeHtml(groupName)}</b>` : 'Sin grupo asignado'}</p>
+            ${photoLinksHtml(point)}
             ${inProgress
             ? `<p class="cp-popup-status in-progress"><i class="fas fa-circle"></i> En proceso desde las ${formatClock(point.attention_started_at)} (${formatDuration(minutesBetween(point.attention_started_at, new Date().toISOString()))})</p>`
             : '<p class="cp-popup-status"><i class="fas fa-circle"></i> Pendiente: nadie ha llegado al lugar</p>'}
@@ -675,10 +677,85 @@ function buildControlPointPopupHtml(point) {
         </div>
     `;
 }
+// =============================================
+// Fotos de evidencia (agentes/admins; requiere supabase/schema_attention_photos.sql)
+// =============================================
+const ATTENTION_PHOTOS_BUCKET = 'attention-photos';
+function needsAttentionPhoto() {
+    return ['agente', 'admin'].includes(currentUserRole);
+}
+// Abre la cámara (o la galería). Debe llamarse directo desde el clic del botón.
+function pickPhotoFile() {
+    return new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.addEventListener('change', () => resolve(input.files[0] || null));
+        input.addEventListener('cancel', () => resolve(null));
+        input.click();
+    });
+}
+// Reduce la foto (máx. 1024 px, JPEG al 60 %) para subirla rápido con datos móviles
+async function compressPhoto(file) {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) =>
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('No se pudo procesar la foto')), 'image/jpeg', 0.6));
+}
+// Devuelve la ruta guardada, o null si el agente canceló o falló la subida
+async function captureAndUploadPhoto(pointId, kind) {
+    const file = await pickPhotoFile();
+    if (!file) {
+        showToast('La foto es obligatoria para continuar.', 'info');
+        return null;
+    }
+    showToast('Subiendo foto...', 'info');
+    try {
+        const blob = await compressPhoto(file);
+        const path = `${pointId}/${kind}-${Date.now()}.jpg`;
+        const { error } = await supabaseClient.storage
+            .from(ATTENTION_PHOTOS_BUCKET)
+            .upload(path, blob, { contentType: 'image/jpeg' });
+        if (error) throw error;
+        return path;
+    } catch (error) {
+        console.error('Error al subir la foto:', error.message || error);
+        showToast('No se pudo subir la foto. Inténtalo de nuevo.', 'error');
+        return null;
+    }
+}
+async function openAttentionPhoto(path) {
+    const { data, error } = await supabaseClient.storage.from(ATTENTION_PHOTOS_BUCKET).createSignedUrl(path, 300);
+    if (error) {
+        showToast('No se pudo abrir la foto.', 'error');
+        return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener');
+}
+function photoLinksHtml(point) {
+    if (!needsAttentionPhoto()) return '';
+    const link = (path, label) => path
+        ? `<a href="#" onclick="event.stopPropagation(); openAttentionPhoto('${path}'); return false;" style="color:#2563eb; text-decoration:underline;"><i class="fas fa-camera"></i> ${label}</a>`
+        : '';
+    const links = [link(point.arrival_photo_path, 'Foto de llegada'), link(point.resolution_photo_path, 'Foto de cierre')].filter(Boolean);
+    return links.length ? `<p class="cp-popup-meta">${links.join(' · ')}</p>` : '';
+}
 async function startControlPointAttention(pointId) {
+    let photoPath = null;
+    if (needsAttentionPhoto()) {
+        photoPath = await captureAndUploadPhoto(pointId, 'llegada');
+        if (!photoPath) return;
+    }
+    const update = { attention_started_at: new Date().toISOString() };
+    if (photoPath) update.arrival_photo_path = photoPath;
     const { data, error } = await supabaseClient
         .from('control_points')
-        .update({ attention_started_at: new Date().toISOString() })
+        .update(update)
         .eq('id', pointId)
         .is('attention_started_at', null)
         .select();
@@ -718,9 +795,16 @@ async function confirmControlPoint(pointId) {
     showToast('¡Gracias por confirmar!', 'success');
 }
 async function resolveControlPoint(pointId) {
+    let photoPath = null;
+    if (needsAttentionPhoto()) {
+        photoPath = await captureAndUploadPhoto(pointId, 'cierre');
+        if (!photoPath) return;
+    }
+    const update = { status: 'resuelto', resolved_at: new Date().toISOString() };
+    if (photoPath) update.resolution_photo_path = photoPath;
     const { data, error } = await supabaseClient
         .from('control_points')
-        .update({ status: 'resuelto', resolved_at: new Date().toISOString() })
+        .update(update)
         .eq('id', pointId)
         .select();
     if (error) {
@@ -799,6 +883,7 @@ async function loadHistory() {
                     ${point.resolved_at ? `<br><span style="font-size:11px; color:#6b7280;">Activo en total: ${formatDuration(minutesBetween(point.created_at, point.resolved_at))}${point.attention_started_at ? ` · en el lugar: ${formatDuration(minutesBetween(point.attention_started_at, point.resolved_at))} (desde las ${formatClock(point.attention_started_at)})` : ''}</span>` : ''}
                     ${point.assigned_group_id ? `<br><span style="font-size:11px; color:#6b7280;">Grupo: ${escapeHtml(agentGroupsById[point.assigned_group_id] || 'Grupo')}</span>` : ''}
                     ${point.description ? `<p style="margin:4px 0 0 0; font-size:12px;">${escapeHtml(point.description)}</p>` : ''}
+                    ${photoLinksHtml(point)}
                 </div>
             </div>
         `;
@@ -2102,6 +2187,7 @@ window.closeAdminPanel = closeAdminPanel;
 window.submitCreateUser = submitCreateUser;
 window.updateUserDistrict = updateUserDistrict;
 window.togglePushNotifications = togglePushNotifications;
+window.openAttentionPhoto = openAttentionPhoto;
 window.openLegendPanel = openLegendPanel;
 window.closeLegendPanel = closeLegendPanel;
 window.openControlPointForm = openControlPointForm;
