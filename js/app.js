@@ -1819,7 +1819,7 @@ async function submitControlPoint(event) {
     renderControlPointMarker(data);
     if (data.assigned_group_id) {
         // No bloquea el registro: si falla, el punto igual queda guardado
-        supabaseClient.functions.invoke('notify-control-point', { body: { point_id: data.id } })
+        supabaseClient.functions.invoke('hyper-function', { body: { point_id: data.id } })
             .then(({ error: notifyError }) => { if (notifyError) console.warn('No se pudo avisar al grupo:', notifyError.message); })
             .catch((err) => console.warn('No se pudo avisar al grupo:', err.message));
     }
