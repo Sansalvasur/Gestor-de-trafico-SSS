@@ -278,6 +278,47 @@ export async function buildDashboardWorkbook(stats, meta) {
         avg: roundMinutes(g.avg_minutes)
     })));
 
+    // --- Atenciones con sus fotos de evidencia ---
+    const attentions = meta.attentions || [];
+    if (attentions.length) {
+        const sheet = addTableSheet(workbook, 'Atenciones', [
+            { header: 'Cierre', key: 'resolvedAt', width: 18 },
+            { header: 'Tipo', key: 'type', width: 18 },
+            { header: 'Distrito', key: 'district', width: 20 },
+            { header: 'Atendido por', key: 'agent', width: 24 },
+            { header: 'Grupo', key: 'group', width: 18 },
+            { header: 'Llegada', key: 'arrivedAt', width: 18 },
+            { header: 'Tiempo total (min)', key: 'minutes', width: 17 },
+            { header: 'Descripción', key: 'description', width: 30 },
+            { header: 'Foto de llegada', key: 'arrivalPhoto', width: 29 },
+            { header: 'Foto de cierre', key: 'resolutionPhoto', width: 29 }
+        ], attentions.map(a => ({
+            resolvedAt: a.resolvedAt,
+            type: meta.typeLabels[a.type] || a.type,
+            district: a.district || '',
+            agent: a.agent || '',
+            group: a.group || '',
+            arrivedAt: a.arrivedAt || '',
+            minutes: roundMinutes(a.minutes),
+            description: a.description || ''
+        })));
+        const photoColumns = [{ key: 'arrivalImage', col: 8 }, { key: 'resolutionImage', col: 9 }];
+        attentions.forEach((a, index) => {
+            const row = sheet.getRow(index + 2);
+            row.height = 112;
+            row.alignment = { vertical: 'top', wrapText: true };
+            photoColumns.forEach(({ key, col }) => {
+                if (!a[key]) return;
+                const imageId = workbook.addImage({ base64: a[key], extension: 'jpeg' });
+                sheet.addImage(imageId, { tl: { col: col + 0.05, row: index + 1.05 }, ext: { width: 190, height: 143 } });
+            });
+        });
+        if (meta.attentionsTruncated) {
+            summary.addRow([]);
+            summary.addRow(['Nota', `La hoja "Atenciones" incluye solo las ${attentions.length} más recientes con fotos del período.`]);
+        }
+    }
+
     // --- Gráficas: en su propia hoja y junto a los datos de donde salen ---
     const chartsSheet = workbook.addWorksheet('Gráficas');
     let chartRow = 1;

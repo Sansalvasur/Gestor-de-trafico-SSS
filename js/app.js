@@ -1111,6 +1111,71 @@ function buildGroupTableHtml(byGroup) {
         </table>
     `;
 }
+// Atenciones del rango con sus fotos (miniaturas pequeñas para que el Excel no pese demasiado)
+const EXPORT_PHOTOS_LIMIT = 150;
+const EXPORT_THUMB_SIZE = 480;
+async function downloadPhotoThumbnail(path) {
+    if (!path) return null;
+    try {
+        const { data: blob, error } = await supabaseClient.storage.from(ATTENTION_PHOTOS_BUCKET).download(path);
+        if (error) throw error;
+        const bitmap = await createImageBitmap(blob);
+        const scale = Math.min(1, EXPORT_THUMB_SIZE / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(bitmap.width * scale);
+        canvas.height = Math.round(bitmap.height * scale);
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.6);
+    } catch (error) {
+        console.warn('No se pudo incluir una foto en el Excel:', path, error.message || error);
+        return null;
+    }
+}
+async function loadAttentionEvidence(fromDate, toDate) {
+    const { data, error } = await supabaseClient
+        .from('control_points')
+        .select('id, type, district, description, created_at, attention_started_at, resolved_at, resolved_by, assigned_group_id, arrival_photo_path, resolution_photo_path')
+        .eq('status', 'resuelto')
+        .gte('resolved_at', new Date(`${fromDate}T00:00:00`).toISOString())
+        .lte('resolved_at', new Date(`${toDate}T23:59:59.999`).toISOString())
+        .or('arrival_photo_path.not.is.null,resolution_photo_path.not.is.null')
+        .order('resolved_at', { ascending: false })
+        .limit(EXPORT_PHOTOS_LIMIT + 1);
+    if (error) {
+        console.warn('No se pudieron cargar las fotos para el Excel:', error.message);
+        return { attentions: [], truncated: false };
+    }
+    const truncated = data.length > EXPORT_PHOTOS_LIMIT;
+    const points = data.slice(0, EXPORT_PHOTOS_LIMIT);
+    const agentIds = [...new Set(points.map(p => p.resolved_by).filter(Boolean))];
+    const agentNames = {};
+    if (agentIds.length) {
+        const { data: agents } = await supabaseClient.from('profiles').select('id, full_name, email').in('id', agentIds);
+        (agents || []).forEach(a => { agentNames[a.id] = a.full_name || a.email; });
+    }
+    const attentions = [];
+    // De a pocas a la vez para no saturar la conexión del teléfono
+    for (let i = 0; i < points.length; i += 4) {
+        const chunk = points.slice(i, i + 4);
+        const photos = await Promise.all(chunk.map(async p => [
+            await downloadPhotoThumbnail(p.arrival_photo_path),
+            await downloadPhotoThumbnail(p.resolution_photo_path)
+        ]));
+        chunk.forEach((p, index) => attentions.push({
+            resolvedAt: new Date(p.resolved_at).toLocaleString('es-SV'),
+            type: p.type,
+            district: p.district,
+            agent: agentNames[p.resolved_by],
+            group: agentGroupsById[p.assigned_group_id],
+            arrivedAt: p.attention_started_at ? new Date(p.attention_started_at).toLocaleString('es-SV') : '',
+            minutes: minutesBetween(p.created_at, p.resolved_at),
+            description: p.description,
+            arrivalImage: photos[index][0],
+            resolutionImage: photos[index][1]
+        }));
+    }
+    return { attentions, truncated };
+}
 async function exportDashboardExcel() {
     if (!lastDashboardExport) return;
     const btn = document.getElementById('dashboard-export-btn');
@@ -1119,10 +1184,13 @@ async function exportDashboardExcel() {
     btn.innerText = 'Generando...';
     try {
         const typeLabels = Object.fromEntries(Object.entries(CONTROL_POINT_TYPES).map(([key, meta]) => [key, meta.label]));
+        const evidence = await loadAttentionEvidence(lastDashboardExport.fromDate, lastDashboardExport.toDate);
         await downloadDashboardExcel(lastDashboardExport.stats, {
             fromDate: lastDashboardExport.fromDate,
             toDate: lastDashboardExport.toDate,
-            typeLabels
+            typeLabels,
+            attentions: evidence.attentions,
+            attentionsTruncated: evidence.truncated
         });
         showToast('Excel descargado.', 'success');
     } catch (error) {
