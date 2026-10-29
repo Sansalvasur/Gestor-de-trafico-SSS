@@ -465,27 +465,23 @@ async function submitCreateUser(event) {
     const btn = document.getElementById('create-user-btn');
     btn.disabled = true;
     btn.innerText = 'Creando...';
-    const tempClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false }
+    const district = document.getElementById('new-user-district').value || null;
+    // La crea una función de Supabase (sin correo de confirmación, así no choca con el límite de envíos)
+    const { data, error } = await supabaseClient.functions.invoke('create-user', {
+        body: { email, password, full_name: name, role, district }
     });
-    const { data, error } = await tempClient.auth.signUp({ email, password, options: { data: { full_name: name } } });
     if (error) {
-        showToast(error.message, 'error');
+        let message = 'No se pudo crear el usuario.';
+        try { message = (await error.context.json()).error || message; } catch (e) { /* sin detalle */ }
+        if (error.name === 'FunctionsFetchError' || (error.context && error.context.status === 404)) {
+            message = 'Falta desplegar la función create-user en Supabase.';
+        }
+        showToast(message, 'error');
         btn.disabled = false;
         btn.innerText = 'Crear usuario';
         return;
     }
-    const district = document.getElementById('new-user-district').value || null;
-    if ((role !== 'ciudadano' || district) && data.user) {
-        const { error: roleError } = await supabaseClient
-            .from('profiles')
-            .update({ role, district })
-            .eq('id', data.user.id);
-        if (roleError) {
-            console.error('Error al asignar rol:', roleError.message);
-            showToast('Usuario creado, pero no se pudo asignar el rol. Cámbialo desde la lista.', 'error');
-        }
-    }
+    if (data && data.warning) showToast(data.warning, 'error');
     showToast('Usuario creado correctamente.', 'success');
     document.getElementById('create-user-form').reset();
     btn.disabled = false;
