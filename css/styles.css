@@ -911,6 +911,21 @@ body {
     font-family: 'Inter', sans-serif;
 }
 
+/* Lista de administración: el nombre ocupa su propia línea y los controles van debajo */
+.user-row-admin {
+    flex-wrap: wrap;
+}
+
+.user-row-admin .user-row-email {
+    flex: 1 1 100%;
+    white-space: normal;
+}
+
+.user-row-admin .user-row-role-select {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
 .user-row-reset-btn {
     border: 1px solid #d1d5db;
     background: white;

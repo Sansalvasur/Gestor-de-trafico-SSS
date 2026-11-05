@@ -504,7 +504,7 @@ async function loadUserList() {
     }
     userListById = Object.fromEntries(data.map(u => [u.id, u]));
     listEl.innerHTML = data.map(user => `
-        <div class="user-row">
+        <div class="user-row user-row-admin">
             <span class="user-row-email" title="${user.full_name || user.email || user.id}">
                 ${user.full_name ? `<b>${user.full_name}</b><br><small>${user.email}</small>` : (user.email || user.id)}
             </span>
