@@ -926,6 +926,15 @@ body {
     min-width: 0;
 }
 
+/* La ventana de restablecer contraseña se abre encima del panel de administración */
+#reset-password-backdrop {
+    z-index: 1250;
+}
+
+#reset-password-modal {
+    z-index: 1300;
+}
+
 .user-row-reset-btn {
     border: 1px solid #d1d5db;
     background: white;
