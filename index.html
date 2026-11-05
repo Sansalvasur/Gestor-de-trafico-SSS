@@ -31,13 +31,14 @@
                 <div class="auth-input-wrap">
                     <i class="fas fa-envelope auth-icon"></i>
                     <input type="email" id="gate-email" class="cp-input" placeholder="usuario@sansalvadorsur.gob.sv"
-                        required>
+                        autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
                 </div>
 
                 <label class="cp-label">Contraseña</label>
                 <div class="auth-input-wrap">
                     <i class="fas fa-lock auth-icon"></i>
                     <input type="password" id="gate-password" class="cp-input has-eye" minlength="6" required
+                        autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false"
                         placeholder="••••••••">
                     <button type="button" class="auth-eye" id="gate-toggle-eye" title="Mostrar/ocultar contraseña">
                         <i class="fas fa-eye" id="gate-eye-icon"></i>

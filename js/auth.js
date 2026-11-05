@@ -62,7 +62,7 @@ window.submitGateAuthForm = async function (event) {
         return;
     }
 
-    const email = document.getElementById('gate-email').value.trim();
+    const email = document.getElementById('gate-email').value.trim().toLowerCase();
     const password = document.getElementById('gate-password').value;
     const btn = document.getElementById('gate-submit-btn');
 
