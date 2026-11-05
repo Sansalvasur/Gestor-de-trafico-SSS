@@ -229,6 +229,7 @@ function closeAuthModal() {
 async function logoutUser() {
     if (supabaseClient) {
         // Quitar el punto del agente ANTES de cerrar sesión (después ya no hay permiso para borrarlo)
+        setSharingFlag(false);
         stopLocationWatch();
         stopPresenceHeartbeat();
         await Promise.all([deleteOwnAgentLocation(), supabaseClient.rpc('set_presence', { p_online: false })]);
@@ -360,6 +361,7 @@ function updateRoleUI() {
     const canShareLocation = currentUser && ['agente', 'admin'].includes(currentUserRole);
     if (canShareLocation) {
         shareBtn.classList.remove('hidden');
+        resumeSharingIfNeeded();
     } else {
         shareBtn.classList.add('hidden');
         if (isSharingLocation) stopSharingLocation();
@@ -1308,12 +1310,32 @@ function toggleShareLocation() {
         startSharingLocation();
     }
 }
+// Recuerda que el agente estaba compartiendo: sobrevive al cierre de la app y permite reanudar solo
+const SHARING_FLAG_KEY = 'vgt-sharing-location';
+function setSharingFlag(on) {
+    try {
+        if (on) localStorage.setItem(SHARING_FLAG_KEY, '1');
+        else localStorage.removeItem(SHARING_FLAG_KEY);
+    } catch (e) { /* sin almacenamiento: solo se pierde la reanudación automática */ }
+}
+function hadSharingFlag() {
+    try { return localStorage.getItem(SHARING_FLAG_KEY) === '1'; } catch (e) { return false; }
+}
+// Al abrir la app (por ejemplo desde el recordatorio) retoma la ubicación si el permiso ya estaba dado
+async function resumeSharingIfNeeded() {
+    if (isSharingLocation || !hadSharingFlag() || !navigator.geolocation || !navigator.permissions) return;
+    try {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        if (status.state === 'granted' && !isSharingLocation) startSharingLocation();
+    } catch (e) { /* navegador sin Permissions API: queda el botón manual */ }
+}
 function startSharingLocation() {
     if (!navigator.geolocation) {
         showToast('La geolocalización no es compatible con tu navegador.', 'error');
         return;
     }
     isSharingLocation = true;
+    setSharingFlag(true);
     document.getElementById('share-location-btn').classList.add('active-mode');
     showToast('Compartiendo tu ubicación en vivo.', 'success');
     locationWatchId = navigator.geolocation.watchPosition(
@@ -1354,6 +1376,7 @@ async function deleteOwnAgentLocation() {
     }
 }
 async function stopSharingLocation() {
+    setSharingFlag(false);
     stopLocationWatch();
     await deleteOwnAgentLocation();
     showToast('Dejaste de compartir tu ubicación.', 'info');
@@ -2300,7 +2323,7 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
     window.addEventListener('DOMContentLoaded', () => setTimeout(startAppInitialization, 100));
 }
 
-// Al cerrar la pestaña o salir de la página: quitar el punto del agente.
+// Al cerrar la pestaña o salir de la página: marcar al usuario como desconectado.
 // fetch con keepalive es lo único que el navegador garantiza enviar mientras la página se cierra.
 window.addEventListener('pagehide', function () {
     if (!currentUser || !currentAccessToken) return;
@@ -2314,15 +2337,8 @@ window.addEventListener('pagehide', function () {
         },
         body: JSON.stringify({ p_online: false })
     }).catch(() => {});
-    if (!isSharingLocation) return;
-    fetch(`${window.SUPABASE_URL}/rest/v1/agent_locations?user_id=eq.${currentUser.id}`, {
-        method: 'DELETE',
-        keepalive: true,
-        headers: {
-            apikey: window.SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${currentAccessToken}`
-        }
-    }).catch(() => {});
+    // La ubicación NO se borra aquí: si se corta sin querer, un recordatorio push avisa al agente
+    // (se borra solo al pulsar "dejar de compartir" o al cerrar sesión).
 });
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
