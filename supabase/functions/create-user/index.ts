@@ -1,6 +1,7 @@
-// Edge Function: un admin crea un usuario (con rol y distrito) sin enviar correo de confirmación.
-// Evita el límite de correos de Supabase y permite cerrar los registros públicos.
-// Cuerpo: { email, password, full_name, role, district }
+// Edge Function: un admin crea un usuario (con rol y distrito) sin enviar correo de confirmación,
+// o le restablece la contraseña. Evita el límite de correos de Supabase y permite cerrar los registros públicos.
+// Crear:        { email, password, full_name, role, district }
+// Restablecer:  { action: 'reset_password', user_id, password }
 // SUPABASE_URL, SUPABASE_ANON_KEY y SUPABASE_SERVICE_ROLE_KEY los provee Supabase.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -40,6 +41,16 @@ Deno.serve(async (req) => {
     } catch {
         return json({ error: 'Solicitud inválida' }, 400);
     }
+    if (body.action === 'reset_password') {
+        const targetId = String(body.user_id ?? '');
+        const newPassword = String(body.password ?? '');
+        if (!targetId) return json({ error: 'Falta el usuario' }, 400);
+        if (newPassword.length < 6) return json({ error: 'La contraseña debe tener al menos 6 caracteres' }, 400);
+        const { error: resetError } = await admin.auth.admin.updateUserById(targetId, { password: newPassword });
+        if (resetError) return json({ error: resetError.message }, 400);
+        return json({ ok: true });
+    }
+
     const email = String(body.email ?? '').trim().toLowerCase();
     const password = String(body.password ?? '');
     const fullName = String(body.full_name ?? '').trim();

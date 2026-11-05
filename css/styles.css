@@ -911,6 +911,19 @@ body {
     font-family: 'Inter', sans-serif;
 }
 
+.user-row-reset-btn {
+    border: 1px solid #d1d5db;
+    background: white;
+    color: #4b5563;
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.user-row-reset-btn:hover {
+    background: #f3f4f6;
+}
+
 /* --- Selector de rutas alternativas --- */
 .route-option-row {
     display: flex;

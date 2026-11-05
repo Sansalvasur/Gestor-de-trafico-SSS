@@ -280,6 +280,23 @@
             <div id="legend-list"></div>
         </div>
 
+        <!-- Modal: Restablecer contraseña (admin) -->
+        <div id="reset-password-backdrop" class="control-point-backdrop" onclick="closeResetPassword()"></div>
+        <div id="reset-password-modal" class="control-point-modal">
+            <h3>Restablecer contraseña</h3>
+            <p class="control-point-modal-subtitle">Usuario: <b id="reset-password-user">-</b></p>
+            <form id="reset-password-form" onsubmit="submitResetPassword(event)">
+                <label class="cp-label">Nueva contraseña temporal</label>
+                <input type="text" id="reset-password-input" class="cp-input" minlength="6" autocomplete="off"
+                    autocapitalize="none" autocorrect="off" spellcheck="false" required>
+                <p class="text-xs text-gray-500">Mínimo 6 caracteres. Compártela con la persona y pídele que la cambie al entrar.</p>
+                <div class="cp-actions">
+                    <button type="button" class="cp-btn cp-btn-secondary" onclick="closeResetPassword()">Cancelar</button>
+                    <button type="submit" class="cp-btn cp-btn-primary" id="reset-password-btn">Restablecer</button>
+                </div>
+            </form>
+        </div>
+
         <!-- Modal: Administración de Usuarios -->
         <div id="admin-backdrop" class="control-point-backdrop" onclick="closeAdminPanel()"></div>
         <div id="admin-modal" class="control-point-modal admin-modal">

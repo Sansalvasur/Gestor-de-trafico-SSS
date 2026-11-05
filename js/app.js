@@ -502,6 +502,7 @@ async function loadUserList() {
         listEl.innerHTML = '<p class="text-sm text-red-500">No se pudo cargar la lista.</p>';
         return;
     }
+    userListById = Object.fromEntries(data.map(u => [u.id, u]));
     listEl.innerHTML = data.map(user => `
         <div class="user-row">
             <span class="user-row-email" title="${user.full_name || user.email || user.id}">
@@ -516,8 +517,52 @@ async function loadUserList() {
                 <option value="agente" ${user.role === 'agente' ? 'selected' : ''}>Agente</option>
                 <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
             </select>
+            <button type="button" class="user-row-reset-btn" title="Restablecer contraseña" onclick="openResetPassword('${user.id}')">
+                <i class="fas fa-key"></i>
+            </button>
         </div>
     `).join('');
+}
+// Restablecer la contraseña de un usuario (solo admin; lo hace la función create-user)
+let userListById = {};
+let resetPasswordUserId = null;
+function openResetPassword(userId) {
+    const user = userListById[userId];
+    if (!user) return;
+    resetPasswordUserId = userId;
+    document.getElementById('reset-password-user').innerText = user.full_name || user.email || user.id;
+    document.getElementById('reset-password-form').reset();
+    document.getElementById('reset-password-backdrop').classList.add('active');
+    document.getElementById('reset-password-modal').classList.add('active');
+}
+function closeResetPassword() {
+    resetPasswordUserId = null;
+    document.getElementById('reset-password-backdrop').classList.remove('active');
+    document.getElementById('reset-password-modal').classList.remove('active');
+}
+async function submitResetPassword(event) {
+    event.preventDefault();
+    if (!resetPasswordUserId) return;
+    const btn = document.getElementById('reset-password-btn');
+    btn.disabled = true;
+    btn.innerText = 'Guardando...';
+    const { error } = await supabaseClient.functions.invoke('create-user', {
+        body: {
+            action: 'reset_password',
+            user_id: resetPasswordUserId,
+            password: document.getElementById('reset-password-input').value
+        }
+    });
+    btn.disabled = false;
+    btn.innerText = 'Restablecer';
+    if (error) {
+        let message = 'No se pudo restablecer la contraseña.';
+        try { message = (await error.context.json()).error || message; } catch (e) { /* sin detalle */ }
+        showToast(message, 'error');
+        return;
+    }
+    showToast('Contraseña restablecida.', 'success');
+    closeResetPassword();
 }
 async function updateUserDistrict(userId, district) {
     const { error } = await supabaseClient
@@ -2271,6 +2316,9 @@ window.toggleRouteMode = toggleRouteMode;
 window.toggleShareLocation = toggleShareLocation;
 window.openAdminPanel = openAdminPanel;
 window.closeAdminPanel = closeAdminPanel;
+window.openResetPassword = openResetPassword;
+window.closeResetPassword = closeResetPassword;
+window.submitResetPassword = submitResetPassword;
 window.submitCreateUser = submitCreateUser;
 window.updateUserDistrict = updateUserDistrict;
 window.togglePushNotifications = togglePushNotifications;
